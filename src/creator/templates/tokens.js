@@ -44,7 +44,7 @@ export function get${componentName}Token(nameOrPath: string | string[], variantO
 
 /**
  * No-op styles component kept for backward compatibility — actual CSS
- * variables are emitted by nice-styles' build into dist/variables.css.
+ * variables are emitted by nice-styles' build into dist/tokens.css.
  *
  * @param {string} componentName
  * @returns {string}

@@ -8,8 +8,8 @@
  *   --unlink     Restore packages to their original npm versions
  *   --dev        Run dev scripts in all linked packages concurrently
  *   --watch      Watch linked package dist folders for changes
- *   --clean-all  Remove conflicting singletons from all linked packages
- *   --clean-only Remove conflicts from a single linked package
+ *   --dedupe     Remove duplicate singletons from linked packages (recursive, or scoped to one path)
+ *   --clean      Kill dev-server ports + wipe consumer caches
  *   (default)    Link a package via file: protocol
  *
  * @module nice-toolkit
@@ -24,7 +24,7 @@ const { detectPM, isWorkspaceRoot } = require('./linking/pm');
 const { pathExists, readJSON } = require('./shared/fs-utils');
 const { findAllLinkedPackages, readPkgName, validatePackageDir } = require('./linking/discovery');
 const { ensurePeerDeps } = require('./linking/peer-deps');
-const { removeConflictsInDir, cleanAllLinkedPackages } = require('./linking/cleaner');
+const { removeConflictsInDir, dedupeLinkedPackages } = require('./linking/cleaner');
 const { cleanAllCaches } = require('./linking/cache-cleaner');
 const { buildAllPackages } = require('./linking/dist-builder');
 const { readRegistry } = require('./shared/registry/read');
@@ -137,17 +137,12 @@ function handleDevWatch(projectDir, options) {
 }
 
 /**
- * Cleans conflicts from a single linked package.
+ * Dedupes singletons in a single linked package (scoped form of --dedupe).
  *
  * @param {object} options - Parsed CLI options
  * @private
  */
-function handleCleanOnly(options) {
-  if (!options.pkgPath) {
-    fail('Provide the linked package path to clean its node_modules');
-    process.exit(1);
-  }
-
+function handleScopedDedupe(options) {
   const validation = validatePackageDir(options.pkgPath);
   if (!validation.valid) {
     fail(validation.error);
@@ -164,7 +159,7 @@ function handleCleanOnly(options) {
     dryRun: options.dryRun,
   });
 
-  success('Cleanup completed');
+  success('Dedupe completed');
 }
 
 /**
@@ -302,16 +297,20 @@ function main() {
     return;
   }
 
-  if (options.cleanAll) {
-    cleanAllLinkedPackages(projectDir, options.packagesToRemove, {
-      dryRun: options.dryRun,
-      skipPeerCheck: options.skipPeerCheck,
-      peerEnforce: PEER_ENFORCE,
-    });
+  if (options.dedupe) {
+    if (options.pkgPath) {
+      handleScopedDedupe(options);
+    } else {
+      dedupeLinkedPackages(projectDir, options.packagesToRemove, {
+        dryRun: options.dryRun,
+        skipPeerCheck: options.skipPeerCheck,
+        peerEnforce: PEER_ENFORCE,
+      });
+    }
     process.exit(0);
   }
 
-  if (options.cleanCaches) {
+  if (options.clean) {
     const registry = readRegistry();
     const baseDir = registry.basePath.replace('~', os.homedir());
     cleanAllCaches(baseDir, { dryRun: options.dryRun, killPorts: !options.noKill });
@@ -321,11 +320,6 @@ function main() {
   if (options.buildAll) {
     const result = buildAllPackages({ dryRun: options.dryRun });
     process.exit(result.failed.length > 0 ? 1 : 0);
-  }
-
-  if (options.cleanOnly) {
-    handleCleanOnly(options);
-    process.exit(0);
   }
 
   handleLink(projectDir, options);
@@ -341,7 +335,7 @@ module.exports = {
   // Re-exports for programmatic use
   detectPM,
   findAllLinkedPackages,
-  cleanAllLinkedPackages,
+  dedupeLinkedPackages,
   removeConflictsInDir,
   ensurePeerDeps,
   linkPackage,

@@ -7,7 +7,7 @@
  * provides the explicit replacement: walk the registry in tier order and run
  * each package's `npm run build` once.
  *
- * Use after `--clean-all`, after a foundation-package refactor, or on a fresh
+ * Use after `--dedupe`, after a foundation-package refactor, or on a fresh
  * clone of the workspace.
  *
  * @module dist-builder

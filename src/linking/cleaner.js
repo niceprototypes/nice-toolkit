@@ -101,7 +101,7 @@ function removeConflictsInDir(dir, packages, { dryRun = false } = {}) {
 /**
  * Cleans all linked packages found in the project's dependency tree
  *
- * This is the main entry point for the --clean-all feature. It:
+ * This is the main entry point for the --dedupe feature. It:
  * 1. Discovers all file: linked packages recursively
  * 2. Optionally enforces peer dependencies in each
  * 3. Removes conflicting packages from each node_modules
@@ -119,8 +119,8 @@ function removeConflictsInDir(dir, packages, { dryRun = false } = {}) {
  * @returns {{ totalCleaned: number, totalRemoved: number }} Summary of operations
  *
  * @example
- * // Clean all linked packages in a Nice project
- * cleanAllLinkedPackages('/path/to/nice-website-2025', [
+ * // Dedupe singletons across all linked packages in a Nice project
+ * dedupeLinkedPackages('/path/to/nice-website-2025', [
  *   'react',
  *   'react-dom',
  *   'styled-components'
@@ -128,12 +128,12 @@ function removeConflictsInDir(dir, packages, { dryRun = false } = {}) {
  *
  * @example
  * // Preview without making changes
- * const result = cleanAllLinkedPackages(process.cwd(), ['react'], {
+ * const result = dedupeLinkedPackages(process.cwd(), ['react'], {
  *   dryRun: true
  * });
- * console.log(`Would clean ${result.totalCleaned} packages`);
+ * console.log(`Would dedupe ${result.totalCleaned} packages`);
  */
-function cleanAllLinkedPackages(projectDir, packages, options = {}) {
+function dedupeLinkedPackages(projectDir, packages, options = {}) {
   const {
     dryRun = false,
     skipPeerCheck = false,
@@ -188,5 +188,5 @@ function cleanAllLinkedPackages(projectDir, packages, options = {}) {
 
 module.exports = {
   removeConflictsInDir,
-  cleanAllLinkedPackages,
+  dedupeLinkedPackages,
 };

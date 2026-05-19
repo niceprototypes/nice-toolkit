@@ -139,15 +139,14 @@ ${cyan('nice-toolkit')}
 
 Usage:
   ntk <package-path> [options]
-  ntk --clean-all [options]
+  ntk --dedupe [path] [options]
   ntk --watch [options]
   ntk --publish [packages...]
 
 Options:
-  --clean-all                ${cyan('Recursively')} clean ALL linked packages in current project
-  --clean-only <path>        Only clean conflicts in the specified linked package
-  --clean-caches             ${cyan('Kill')} dev-server ports + wipe webpack/Vite caches across every consumer
-  --no-kill                  Used with ${cyan('--clean-caches')} to skip the port-kill phase (caches only)
+  --dedupe [path]            ${cyan('Remove')} duplicate singletons (react, styled-components, etc.) from linked packages' node_modules. With a path, scope to just that package; otherwise recurse across all linked packages.
+  --clean                    ${cyan('Kill')} dev-server ports + wipe webpack/Vite caches across every consumer
+  --no-kill                  Used with ${cyan('--clean')} to skip the port-kill phase (caches only)
   --build-all                ${cyan('Rebuild')} every linked nice-* package's dist in registry tier order
   --unlink                   Restore npm packages to their original versions
   --dev                      ${cyan('Run')} dev scripts in all linked packages (rebuilds on change)
@@ -169,10 +168,10 @@ Options:
   --help, -h                 Show help
 
 Examples:
-  ntk --clean-all            Clean all file: linked packages recursively
-  ntk --clean-only ../my-lib Clean only the specified package
+  ntk --dedupe               Dedupe singletons across all file: linked packages recursively
+  ntk --dedupe ../my-lib     Dedupe singletons in only the specified package
   ntk ../my-lib              Link and clean a package
-  ntk --dry-run --clean-all  Preview what would be cleaned
+  ntk --dry-run --dedupe     Preview what would be deduped
   ntk --publish              Publish all changed packages to npm
   ntk --publish nice-styles,nice-react-styles  Publish specific packages
   ntk --dev                  Run dev scripts in all linked packages
@@ -181,9 +180,10 @@ Examples:
   ntk --watch --watch-dir src Watch src/ instead of dist/
 
 Notes:
-  ${cyan('--clean-all')} finds all file: dependencies recursively and cleans each one.
-  This is the recommended way to resolve "multiple copies of React" errors
-  when working with linked Nice ecosystem packages.
+  ${cyan('--dedupe')} finds all file: dependencies recursively and removes duplicate
+  singletons (react, styled-components, etc.) from each. This is the recommended
+  way to resolve "multiple copies of React" errors when working with linked
+  Nice ecosystem packages.
 
   ${cyan('--dev')} runs 'npm run dev' in all linked packages concurrently,
   rebuilding them when source files change.
@@ -206,8 +206,8 @@ Notes:
  * @typedef {object} ParsedOptions
  * @property {string[]} packagesToRemove - Packages to remove from node_modules
  * @property {boolean} dryRun - Preview mode, don't make changes
- * @property {boolean} cleanAll - Clean all linked packages recursively
- * @property {boolean} cleanOnly - Only clean, don't link
+ * @property {boolean} dedupe - Dedupe singletons across all linked packages recursively
+ * @property {boolean} clean - Kill dev-server ports + wipe consumer caches
  * @property {boolean} unlink - Restore original versions
  * @property {boolean} dev - Run dev scripts in all linked packages
  * @property {boolean} watch - Watch linked packages for changes
@@ -268,9 +268,8 @@ function parseArgs(args, { conflictingPackages, pm: defaultPM }) {
     publishPackages: getArg(args, '--publish'),
     noNpm: hasFlag(args, '--no-npm'),
     dryPublish: hasFlag(args, '--dry-publish'),
-    cleanAll: hasFlag(args, '--clean-all'),
-    cleanOnly: hasFlag(args, '--clean-only'),
-    cleanCaches: hasFlag(args, '--clean-caches'),
+    dedupe: hasFlag(args, '--dedupe'),
+    clean: hasFlag(args, '--clean'),
     noKill: hasFlag(args, '--no-kill'),
     buildAll: hasFlag(args, '--build-all'),
     unlink: hasFlag(args, '--unlink'),
