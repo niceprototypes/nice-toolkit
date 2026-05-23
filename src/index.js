@@ -15,14 +15,12 @@
  * @module nice-toolkit
  */
 
-const path = require('path');
 const os = require('os');
 const { DEFAULT_CONFLICTING_PACKAGES, PEER_ENFORCE } = require('./shared/config');
-const { log, info, success, warn, fail, cyan, gray } = require('./shared/logger');
+const { info, success, fail, cyan, gray } = require('./shared/logger');
 const { showUsage, parseArgs } = require('./args');
-const { detectPM, isWorkspaceRoot } = require('./linking/pm');
-const { pathExists, readJSON } = require('./shared/fs-utils');
-const { findAllLinkedPackages, readPkgName, validatePackageDir } = require('./linking/discovery');
+const { detectPM } = require('./linking/pm');
+const { findAllLinkedPackages } = require('./linking/discovery');
 const { ensurePeerDeps } = require('./linking/peer-deps');
 const { removeConflictsInDir, dedupeLinkedPackages } = require('./linking/cleaner');
 const { cleanAllCaches } = require('./linking/cache-cleaner');
@@ -34,179 +32,9 @@ const { startDevRunner } = require('./linking/dev-runner');
 const { publish } = require('./publishing');
 const { create } = require('./creator');
 const { appendBumpIntent, bumpFileRelativePath } = require('./shared/bump');
-
-// ──────────────────────────────────────────────────────────────────────────────
-// Helpers
-// ──────────────────────────────────────────────────────────────────────────────
-
-/**
- * Detects Create React App by checking for react-scripts in dependencies.
- * Displays NODE_OPTIONS advice if found.
- *
- * @param {string} projectDir - Project root directory
- * @returns {boolean} True if CRA was detected
- * @private
- */
-function showCRAAdvice(projectDir) {
-  try {
-    const pkg = readJSON(path.join(projectDir, 'package.json'));
-    const deps = { ...pkg.dependencies, ...pkg.devDependencies };
-
-    if (deps['react-scripts']) {
-      info('CRA detected. If module resolution errors occur, try:');
-      info('  export NODE_OPTIONS=--preserve-symlinks  (bash/zsh)');
-      info('  setx NODE_OPTIONS "--preserve-symlinks"  (Windows)');
-      return true;
-    }
-  } catch {
-    // package.json missing or unreadable — not a CRA project
-  }
-  return false;
-}
-
-/**
- * Displays recommended next steps after a successful link operation.
- * Adapts suggestions based on available scripts and project type.
- *
- * @param {string} resolvedPkgPath - Absolute path to the linked package
- * @param {boolean} isCRA - Whether the consuming project uses CRA
- * @private
- */
-function showNextSteps(resolvedPkgPath, isCRA) {
-  const pkg = readJSON(path.join(resolvedPkgPath, 'package.json'));
-  const hasDevScript = pkg.scripts?.dev;
-  const hasWatchScript = pkg.scripts?.['build:watch'];
-  const pkgName = path.basename(resolvedPkgPath);
-
-  log('\nNext steps:');
-
-  if (hasDevScript || hasWatchScript) {
-    const watchCmd = hasDevScript ? 'npm run dev' : 'npm run build:watch';
-    log(`Run ${cyan(watchCmd)} in ${gray(pkgName)} for live rebuilding`);
-    log(`Edit files in ${gray(pkgName)} → auto-rebuild → changes appear in your app`);
-  } else {
-    log(`Run ${cyan('npm run build')} in ${gray(pkgName)} after making changes`);
-  }
-
-  if (isCRA) {
-    log(`Restart your dev server with: ${cyan('NODE_OPTIONS=--preserve-symlinks npm start')}`);
-  } else {
-    log('Restart your dev server if needed');
-  }
-
-  log(`To unlink: run ${cyan('npx nice-toolkit --unlink')}`);
-}
-
-// ──────────────────────────────────────────────────────────────────────────────
-// Command Handlers
-// ──────────────────────────────────────────────────────────────────────────────
-
-/**
- * Starts dev runner and/or watcher processes.
- * Sets up SIGINT/SIGTERM handlers for graceful shutdown.
- * This function does not return — it keeps the process alive.
- *
- * @param {string} projectDir - Project root directory
- * @param {object} options - Parsed CLI options
- * @private
- */
-function handleDevWatch(projectDir, options) {
-  let devController = null;
-  let watchController = null;
-
-  if (options.dev) {
-    devController = startDevRunner(projectDir, { verbose: true });
-  }
-
-  if (options.watch) {
-    watchController = startWatching(projectDir, {
-      watchDir: options.watchDir,
-      verbose: true,
-    });
-  }
-
-  // Graceful shutdown on Ctrl+C or kill signal
-  const shutdown = () => {
-    if (watchController) watchController.stop();
-    if (devController) devController.stop();
-    process.exit(0);
-  };
-
-  process.on('SIGINT', shutdown);
-  process.on('SIGTERM', shutdown);
-}
-
-/**
- * Dedupes singletons in a single linked package (scoped form of --dedupe).
- *
- * @param {object} options - Parsed CLI options
- * @private
- */
-function handleScopedDedupe(options) {
-  const validation = validatePackageDir(options.pkgPath);
-  if (!validation.valid) {
-    fail(validation.error);
-    process.exit(1);
-  }
-
-  const resolvedPath = path.resolve(options.pkgPath);
-
-  if (!options.skipPeerCheck) {
-    ensurePeerDeps(resolvedPath, PEER_ENFORCE, { dryRun: options.dryRun });
-  }
-
-  removeConflictsInDir(resolvedPath, options.packagesToRemove, {
-    dryRun: options.dryRun,
-  });
-
-  success('Dedupe completed');
-}
-
-/**
- * Links a package via file: protocol and cleans conflicts.
- *
- * @param {string} projectDir - Project root directory
- * @param {object} options - Parsed CLI options
- * @private
- */
-function handleLink(projectDir, options) {
-  if (!options.pkgPath) {
-    fail('Please provide a path to the package you want to link');
-    showUsage();
-    process.exit(1);
-  }
-
-  const validation = validatePackageDir(options.pkgPath);
-  if (!validation.valid) {
-    fail(validation.error);
-    process.exit(1);
-  }
-
-  const resolvedPath = path.resolve(options.pkgPath);
-
-  if (isWorkspaceRoot(projectDir) && !options.forcedPM) {
-    warn('Workspaces detected. Consider using "workspace:" or local file deps instead of linking.');
-  }
-
-  if (!options.skipPeerCheck) {
-    ensurePeerDeps(resolvedPath, PEER_ENFORCE, { dryRun: options.dryRun });
-  }
-
-  // Clean → link → detect CRA → clean again
-  // The second clean pass is needed because npm install during linking
-  // may reinstall the same conflicting singletons we just removed
-  removeConflictsInDir(resolvedPath, options.packagesToRemove, { dryRun: options.dryRun });
-
-  const pkgName = readPkgName(resolvedPath);
-  linkPackage(options.pm, resolvedPath, pkgName, { dryRun: options.dryRun });
-
-  const isCRA = showCRAAdvice(projectDir);
-
-  removeConflictsInDir(resolvedPath, options.packagesToRemove, { dryRun: options.dryRun });
-
-  success(`Successfully linked ${cyan(pkgName)}!`);
-  showNextSteps(resolvedPath, isCRA);
-}
+const { handleDevWatch } = require('./cli/handle-dev-watch');
+const { handleScopedDedupe } = require('./cli/handle-scoped-dedupe');
+const { handleLink } = require('./cli/handle-link');
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Main
