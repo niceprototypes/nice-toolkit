@@ -126,7 +126,7 @@ async function publish({ packages: requestedPackages, doPublish = true, dryRun =
   // Verify npm auth right before the publish step so the user isn't blocked
   // on login during scan/prompt/build (which don't need npm credentials).
   if (doPublish) {
-    if (!verifyNpmAuth()) {
+    if (!(await verifyNpmAuth())) {
       restoreAllDeps(swappedDeps)
       return
     }
