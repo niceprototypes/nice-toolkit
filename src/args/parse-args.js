@@ -60,7 +60,7 @@ function parseArgs(args, { conflictingPackages, pm: defaultPM }) {
   const watchDir = getArg(args, '--watch-dir');
 
   // Find positional argument (package path)
-  const flagsWithValues = new Set(['--exclude', '--add-exclude', '--manager', '--watch-dir', '--publish', '--create', '--type', '--bump']);
+  const flagsWithValues = new Set(['--exclude', '--add-exclude', '--manager', '--watch-dir', '--publish', '--bump']);
   const pkgPath = findPositionalArg(args, flagsWithValues);
 
   // --bump {level} "{message}" — append an entry to .nice/bump.md in the
@@ -72,8 +72,6 @@ function parseArgs(args, { conflictingPackages, pm: defaultPM }) {
   return {
     packagesToRemove,
     dryRun: hasFlag(args, '--dry-run'),
-    create: getArg(args, '--create'),
-    createType: getArg(args, '--type') || 'component',
     publish: hasFlag(args, '--publish'),
     publishPackages: getArg(args, '--publish'),
     noNpm: hasFlag(args, '--no-npm'),

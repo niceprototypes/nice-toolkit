@@ -44,8 +44,6 @@ Options:
   --dry-run                  Show what would happen without making changes
   --manager <npm|yarn|pnpm>  Force a package manager (auto-detected by default)
   --skip-peer-check          Do not auto-move react/react-dom to peerDependencies
-  --create <name>            Create a new Nice ecosystem package
-  --type <component>         Package type for --create (default: component)
   --publish [pkg1,pkg2,...]  Publish changed packages to npm (all if no packages specified)
   --no-npm                   Bump, build, commit, push — but skip npm publish
   --dry-publish              Preview what would be published without making changes

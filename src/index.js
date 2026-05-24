@@ -3,7 +3,6 @@
  *
  * Routes command-line flags to the appropriate operation:
  *
- *   --create     Scaffold a new Nice ecosystem package
  *   --publish    Publish packages to npm with dependency cascade
  *   --unlink     Restore packages to their original npm versions
  *   --dev        Run dev scripts in all linked packages concurrently
@@ -30,7 +29,6 @@ const { linkPackage, unlinkPackages } = require('./linking/linker');
 const { startWatching, TRIGGER_FILE_NAME } = require('./linking/watcher');
 const { startDevRunner } = require('./linking/dev-runner');
 const { publish } = require('./publishing');
-const { create } = require('./creator');
 const { appendBumpIntent, bumpFileRelativePath } = require('./shared/bump');
 const { handleDevWatch } = require('./cli/handle-dev-watch');
 const { handleScopedDedupe } = require('./cli/handle-scoped-dedupe');
@@ -73,11 +71,6 @@ function main() {
 
   if (options.unlink) {
     unlinkPackages(options.pm, { dryRun: options.dryRun });
-    process.exit(0);
-  }
-
-  if (options.create) {
-    create({ name: options.create, type: options.createType, dryRun: options.dryRun });
     process.exit(0);
   }
 

@@ -2,14 +2,13 @@
  * @fileoverview Query service for the Nice ecosystem package registry.
  *
  * Single entry point for reading and querying registry.json. All consumers
- * (publisher, creator, storybook, vite configs) import from this module
+ * (publisher, storybook, vite configs) import from this module
  * instead of reading the raw JSON directly.
  *
  * Sub-modules:
  * - constants.js — REGISTRY_PATH, VALID_TYPES, VALID_GROUPS
  * - read.js      — readRegistry, validateEntry
  * - query.js     — getAllPackages, getPackageNames, getTiers, getTierIndexMap, getByType, getByGroup, getLinkedPackageMap, getSourceAliasableNames
- * - write.js     — addPackage
  *
  * @module registry
  */
@@ -26,7 +25,6 @@ const {
   getLinkedPackageMap,
   getSourceAliasableNames,
 } = require('./query');
-const { addPackage } = require('./write');
 
 module.exports = {
   // Constants
@@ -47,7 +45,4 @@ module.exports = {
   getByGroup,
   getLinkedPackageMap,
   getSourceAliasableNames,
-
-  // Write
-  addPackage,
 };
