@@ -9,8 +9,12 @@
  * 5. Confirm — show plan and get final approval
  * 6. Bump — write new versions to package.json
  * 7. Build — compile all packages, swap deps to semver
- * 8. Release — publish to npm with OTP management
+ * 8. Release — verify npm auth, publish to npm with OTP management
  * 9. Finalize — restore deps, commit, tag, push, summarize
+ *
+ * The npm auth check is deferred until step 8 so scan/display/prompt/build
+ * (the time-consuming phases that don't need npm credentials) can run without
+ * blocking on `npm login`.
  *
  * @module publisher
  */
@@ -38,11 +42,6 @@ const { restoreAllDeps, commitAndTag, printSummary } = require("./finalize")
  * @returns {Promise<void>}
  */
 async function publish({ packages: requestedPackages, doPublish = true, dryRun = false } = {}) {
-  // ── 0. Verify npm auth before doing any work ─────────────────────────────
-  if (doPublish && !dryRun) {
-    if (!verifyNpmAuth()) return
-  }
-
   log("Scanning packages...\n")
 
   // ── 1. Discover candidates ────────────────────────────────────────────────
@@ -124,6 +123,15 @@ async function publish({ packages: requestedPackages, doPublish = true, dryRun =
   }
 
   // ── 8. Publish to npm ─────────────────────────────────────────────────────
+  // Verify npm auth right before the publish step so the user isn't blocked
+  // on login during scan/prompt/build (which don't need npm credentials).
+  if (doPublish) {
+    if (!verifyNpmAuth()) {
+      restoreAllDeps(swappedDeps)
+      return
+    }
+  }
+
   const { published, failed } = await releasePackages(publishable, doPublish)
   const allFailed = [...buildFailed, ...failed]
 

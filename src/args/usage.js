@@ -35,6 +35,7 @@ Options:
   --clean                    ${cyan('Kill')} dev-server ports + wipe webpack/Vite caches across every consumer
   --no-kill                  Used with ${cyan('--clean')} to skip the port-kill phase (caches only)
   --build-all                ${cyan('Rebuild')} every linked nice-* package's dist in registry tier order
+  --reset                    ${cyan('Chain')} --build-all → --dedupe → --clean. Use after refactors that touch foundation packages.
   --unlink                   Restore npm packages to their original versions
   --dev                      ${cyan('Run')} dev scripts in all linked packages (rebuilds on change)
   --watch                    ${cyan('Watch')} linked package dist folders and trigger reload on change
@@ -63,6 +64,7 @@ Examples:
   ntk --dev --watch          Rebuild packages AND trigger reload on changes
   ntk --watch                Watch dist folders (use with external rebuilder)
   ntk --watch --watch-dir src Watch src/ instead of dist/
+  ntk --reset                Rebuild all + dedupe + clean (post-refactor recovery)
 
 Notes:
   ${cyan('--dedupe')} finds all file: dependencies recursively and removes duplicate

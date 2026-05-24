@@ -18,6 +18,7 @@ const { findBumpMessage } = require('./bump-message');
  * @property {boolean} dryRun - Preview mode, don't make changes
  * @property {boolean} dedupe - Dedupe singletons across all linked packages recursively
  * @property {boolean} clean - Kill dev-server ports + wipe consumer caches
+ * @property {boolean} reset - Chain --build-all → --dedupe → --clean in sequence
  * @property {boolean} unlink - Restore original versions
  * @property {boolean} dev - Run dev scripts in all linked packages
  * @property {boolean} watch - Watch linked packages for changes
@@ -80,6 +81,7 @@ function parseArgs(args, { conflictingPackages, pm: defaultPM }) {
     clean: hasFlag(args, '--clean'),
     noKill: hasFlag(args, '--no-kill'),
     buildAll: hasFlag(args, '--build-all'),
+    reset: hasFlag(args, '--reset'),
     unlink: hasFlag(args, '--unlink'),
     dev: hasFlag(args, '--dev'),
     watch: hasFlag(args, '--watch'),

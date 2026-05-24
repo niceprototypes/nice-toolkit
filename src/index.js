@@ -9,6 +9,7 @@
  *   --watch      Watch linked package dist folders for changes
  *   --dedupe     Remove duplicate singletons from linked packages (recursive, or scoped to one path)
  *   --clean      Kill dev-server ports + wipe consumer caches
+ *   --reset      Chain --build-all → --dedupe → --clean (post-foundation-refactor recovery)
  *   (default)    Link a package via file: protocol
  *
  * @module nice-toolkit
@@ -141,6 +142,20 @@ function main() {
   if (options.buildAll) {
     const result = buildAllPackages({ dryRun: options.dryRun });
     process.exit(result.failed.length > 0 ? 1 : 0);
+  }
+
+  if (options.reset) {
+    info('--reset: --build-all → --dedupe → --clean');
+    const buildResult = buildAllPackages({ dryRun: options.dryRun });
+    dedupeLinkedPackages(projectDir, options.packagesToRemove, {
+      dryRun: options.dryRun,
+      skipPeerCheck: options.skipPeerCheck,
+      peerEnforce: PEER_ENFORCE,
+    });
+    const registry = readRegistry();
+    const baseDir = registry.basePath.replace('~', os.homedir());
+    cleanAllCaches(baseDir, { dryRun: options.dryRun, killPorts: !options.noKill });
+    process.exit(buildResult.failed.length > 0 ? 1 : 0);
   }
 
   handleLink(projectDir, options);
