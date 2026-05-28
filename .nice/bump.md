@@ -1,1 +1,0 @@
-[2026-05-26 02:15] patch: Drop rollup-plugin-peer-deps-external from the new-package scaffold template — its role is now performed inline by createExternals in nice-configuration/src/rollup/externals.js, so scaffolded packages no longer need it in devDependencies.
