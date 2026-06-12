@@ -19,7 +19,7 @@ const { readJSON, pathExists } = require('../shared/fs-utils');
 const { getAllPackages } = require('../shared/registry/query');
 const { readRegistry } = require('../shared/registry/read');
 const os = require('os');
-const { log, info, success, fail, warn, cyan, gray } = require('../shared/logger');
+const { log, info, success, fail, warn, cyan, gray, green, red } = require('../shared/logger');
 
 /**
  * Resolves the absolute directory for a registered package.
@@ -50,6 +50,8 @@ function buildAllPackages({ dryRun = false } = {}) {
   const built = [];
   const skipped = [];
   const failed = [];
+  // Per-package annotation (skip/fail reason) shown in the final list.
+  const reasons = {};
 
   for (const entry of packages) {
     const name = entry.name;
@@ -58,6 +60,7 @@ function buildAllPackages({ dryRun = false } = {}) {
     if (!pathExists(dir)) {
       warn(`${name}: directory not found at ${gray(dir)} — skipping`);
       skipped.push(name);
+      reasons[name] = 'directory not found';
       continue;
     }
 
@@ -67,12 +70,14 @@ function buildAllPackages({ dryRun = false } = {}) {
     } catch (e) {
       fail(`${name}: cannot read package.json — ${e.message}`);
       failed.push(name);
+      reasons[name] = 'cannot read package.json';
       continue;
     }
 
     if (!pkg.scripts || !pkg.scripts.build) {
       log(`${gray('—')} ${gray(name)} (no build script)`);
       skipped.push(name);
+      reasons[name] = 'no build script';
       continue;
     }
 
@@ -89,6 +94,7 @@ function buildAllPackages({ dryRun = false } = {}) {
     } catch (e) {
       fail(`${name}: build failed`);
       failed.push(name);
+      reasons[name] = 'build failed';
     }
   }
 
@@ -96,10 +102,17 @@ function buildAllPackages({ dryRun = false } = {}) {
   const summary = `${verb} ${built.length}, skipped ${skipped.length}, failed ${failed.length}`;
   if (failed.length > 0) {
     fail(summary);
-    fail(`Failed packages: ${failed.join(', ')}`);
   } else {
     success(summary);
   }
+
+  // Per-package list, grouped built → skipped → failed. Names are padded to a
+  // common width so the gray skip/fail reasons line up in a column.
+  const allNames = [...built, ...skipped, ...failed];
+  const pad = allNames.reduce((max, n) => Math.max(max, n.length), 0);
+  for (const name of built) console.log(`  ${green('✓')} ${name}`);
+  for (const name of skipped) console.log(`  ${gray('⊘')} ${name.padEnd(pad)}  ${gray(reasons[name] || '')}`);
+  for (const name of failed) console.log(`  ${red('✗')} ${name.padEnd(pad)}  ${gray(reasons[name] || '')}`);
 
   return { built, skipped, failed };
 }
