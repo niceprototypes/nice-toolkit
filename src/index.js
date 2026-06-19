@@ -25,6 +25,7 @@ const { ensurePeerDeps } = require('./linking/peer-deps');
 const { removeConflictsInDir, dedupeLinkedPackages } = require('./linking/cleaner');
 const { cleanAllCaches } = require('./linking/cache-cleaner');
 const { buildAllPackages } = require('./linking/dist-builder');
+const { terminateDevWatchers } = require('./linking/dev-watch-killer');
 const { readRegistry } = require('./shared/registry/read');
 const { linkPackage, unlinkPackages } = require('./linking/linker');
 const { startWatching, TRIGGER_FILE_NAME } = require('./linking/watcher');
@@ -146,6 +147,14 @@ function main() {
 
   if (options.reset) {
     info('--reset: --build-all → --dedupe → --clean');
+    // Stop any running `ntk --dev --watch` first — its rollup watchers write
+    // the same dist files the rebuild does, and dedupe/clean mutate
+    // node_modules and caches under it. SIGTERM lets each instance tear down
+    // its own child processes cleanly.
+    const stopped = terminateDevWatchers({ dryRun: options.dryRun });
+    if (stopped > 0) {
+      info(`Stopped ${stopped} running dev/watch process${stopped === 1 ? '' : 'es'} before reset`);
+    }
     const buildResult = buildAllPackages({ dryRun: options.dryRun });
     dedupeLinkedPackages(projectDir, options.packagesToRemove, {
       dryRun: options.dryRun,
