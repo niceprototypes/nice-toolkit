@@ -40,6 +40,11 @@
         "name": "nice-react-typography",
         "type": "react-component",
         "sourceAliasable": true
+      },
+      {
+        "name": "nice-react-tooltip",
+        "type": "react-component",
+        "sourceAliasable": true
       }
     ],
     [
