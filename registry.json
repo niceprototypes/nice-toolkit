@@ -18,6 +18,36 @@
         "sourceAliasable": false
       },
       {
+        "name": "nice-config-rollup",
+        "type": "foundation",
+        "sourceAliasable": false
+      },
+      {
+        "name": "nice-config-typescript",
+        "type": "foundation",
+        "sourceAliasable": false
+      },
+      {
+        "name": "nice-config-jest",
+        "type": "foundation",
+        "sourceAliasable": false
+      },
+      {
+        "name": "nice-config-exports",
+        "type": "foundation",
+        "sourceAliasable": false
+      },
+      {
+        "name": "nice-config-eslint",
+        "type": "foundation",
+        "sourceAliasable": false
+      },
+      {
+        "name": "nice-config-prettier",
+        "type": "foundation",
+        "sourceAliasable": false
+      },
+      {
         "name": "nice-vite-watcher",
         "type": "plugin",
         "sourceAliasable": false
@@ -79,11 +109,6 @@
       },
       {
         "name": "nice-react-slider",
-        "type": "react-component",
-        "sourceAliasable": true
-      },
-      {
-        "name": "nice-react-device-detector",
         "type": "react-component",
         "sourceAliasable": true
       },

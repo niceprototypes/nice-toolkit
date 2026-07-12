@@ -9,6 +9,8 @@
  *   --watch      Watch linked package dist folders for changes
  *   --dedupe     Remove duplicate singletons from linked packages (recursive, or scoped to one path)
  *   --clean      Kill dev-server ports + wipe consumer caches
+ *   --build-all  Rebuild every linked nice-* package's dist in tier order
+ *   --build-icons Rebuild nice-icons + its dependents (nice-react-icon, …) in tier order
  *   --reset      Chain --build-all → --dedupe → --clean (post-foundation-refactor recovery)
  *   (default)    Link a package via file: protocol
  *
@@ -23,7 +25,7 @@ const { detectPM } = require('./linking/pm');
 const { findAllLinkedPackages } = require('./linking/discovery');
 const { ensurePeerDeps } = require('./linking/peer-deps');
 const { removeConflictsInDir, dedupeLinkedPackages } = require('./linking/cleaner');
-const { cleanAllCaches } = require('./linking/cache-cleaner');
+const { cleanAllCaches, refreshVite } = require('./linking/cache-cleaner');
 const { buildAllPackages } = require('./linking/dist-builder');
 const { terminateDevWatchers } = require('./linking/dev-watch-killer');
 const { readRegistry } = require('./shared/registry/read');
@@ -35,6 +37,8 @@ const { appendBumpIntent, bumpFileRelativePath } = require('./shared/bump');
 const { handleDevWatch } = require('./cli/handle-dev-watch');
 const { handleScopedDedupe } = require('./cli/handle-scoped-dedupe');
 const { handleLink } = require('./cli/handle-link');
+const { handleBuildIcons } = require('./cli/handle-build-icons');
+const { writeResetLog } = require('./cli/reset-log');
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Main
@@ -145,6 +149,25 @@ function main() {
     process.exit(result.failed.length > 0 ? 1 : 0);
   }
 
+  if (options.vite) {
+    const registry = readRegistry();
+    const baseDir = registry.basePath.replace('~', os.homedir());
+    refreshVite(baseDir, { dryRun: options.dryRun, killPorts: !options.noKill });
+    process.exit(0);
+  }
+
+  // Async — prompts to stop a running dev/watch (which races the icon build on
+  // the same dist) before proceeding. Uses return + promise chain like publish.
+  if (options.buildIcons) {
+    handleBuildIcons(options)
+      .then((code) => process.exit(code))
+      .catch((e) => {
+        fail(e.message);
+        process.exit(1);
+      });
+    return;
+  }
+
   if (options.reset) {
     info('--reset: --build-all → --dedupe → --clean');
     // Stop any running `ntk --dev --watch` first — its rollup watchers write
@@ -155,7 +178,7 @@ function main() {
     if (stopped > 0) {
       info(`Stopped ${stopped} running dev/watch process${stopped === 1 ? '' : 'es'} before reset`);
     }
-    const buildResult = buildAllPackages({ dryRun: options.dryRun });
+    const buildResult = buildAllPackages({ dryRun: options.dryRun, capture: options.log });
     dedupeLinkedPackages(projectDir, options.packagesToRemove, {
       dryRun: options.dryRun,
       skipPeerCheck: options.skipPeerCheck,
@@ -164,6 +187,12 @@ function main() {
     const registry = readRegistry();
     const baseDir = registry.basePath.replace('~', os.homedir());
     cleanAllCaches(baseDir, { dryRun: options.dryRun, killPorts: !options.noKill });
+    // --log: persist a timestamped, shareable report of the build results
+    // (including each failed package's captured output) to {root}/.nice/.
+    if (options.log) {
+      const logFile = writeResetLog(baseDir, buildResult);
+      info(`Reset log written to ${cyan(logFile)}`);
+    }
     process.exit(buildResult.failed.length > 0 ? 1 : 0);
   }
 

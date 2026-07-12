@@ -61,8 +61,15 @@ function parseArgs(args, { conflictingPackages, pm: defaultPM }) {
   const watchDir = getArg(args, '--watch-dir');
 
   // Find positional argument (package path)
-  const flagsWithValues = new Set(['--exclude', '--add-exclude', '--manager', '--watch-dir', '--publish', '--bump']);
+  const flagsWithValues = new Set(['--exclude', '--add-exclude', '--manager', '--watch-dir', '--publish', '--bump', '--convert']);
   const pkgPath = findPositionalArg(args, flagsWithValues);
+
+  // --convert [path]: with --build-icons, convert new .source .ai files first.
+  // The optional value is a .source folder ("brands", "brands/github") or a
+  // single .ai file ("brands/github/fill.ai"); a bare --convert (next token
+  // another flag, or absent) converts all of .source.
+  const convertRaw = getArg(args, '--convert');
+  const convertPath = convertRaw && !convertRaw.startsWith('--') ? convertRaw : undefined;
 
   // --bump {level} "{message}" — append an entry to .nice/bump.md in the
   // current package. The value of --bump is the level; the message is the
@@ -81,7 +88,12 @@ function parseArgs(args, { conflictingPackages, pm: defaultPM }) {
     clean: hasFlag(args, '--clean'),
     noKill: hasFlag(args, '--no-kill'),
     buildAll: hasFlag(args, '--build-all'),
+    buildIcons: hasFlag(args, '--build-icons'),
+    convert: hasFlag(args, '--convert'),
+    convertPath,
+    vite: hasFlag(args, '--vite'),
     reset: hasFlag(args, '--reset'),
+    log: hasFlag(args, '--log'),
     unlink: hasFlag(args, '--unlink'),
     dev: hasFlag(args, '--dev'),
     watch: hasFlag(args, '--watch'),

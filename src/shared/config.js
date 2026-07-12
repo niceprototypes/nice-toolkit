@@ -49,6 +49,13 @@ const DEFAULT_CONFLICTING_PACKAGES = [
   'styled-components',
   '@emotion/react',
   '@emotion/styled',
+
+  // React type packages - a duplicate physical copy (even at the same version)
+  // gives TypeScript two distinct `FC` identities, so @rollup/plugin-typescript
+  // fails to emit a component's declaration (TS2883 "inferred type cannot be
+  // named"), which then breaks the dts bundle. Must be deduped like react itself.
+  '@types/react',
+  '@types/react-dom',
 ];
 
 /**

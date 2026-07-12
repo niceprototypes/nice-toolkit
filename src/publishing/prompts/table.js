@@ -15,7 +15,7 @@ const { derivedVersion } = require("./version")
 // Column widths used by both the header and each body row. Kept as constants
 // so the two stay in lock-step — change one, change the other implicitly.
 // Widths are sized for the worst-case content each column can hold:
-//   NAME    = `nice-react-device-detector` etc. (longest current package)
+//   NAME    = `nice-react-image-vendor` etc. (longest current package)
 //   VERSION = `999.999.999 → 999.999.999` plus the unicode arrow glyph
 //   LEVEL   = `(major)` / `(as-is)` / blank — 8 with one trailing space
 //   ENTRIES = bare count (e.g. `0`, `10`)

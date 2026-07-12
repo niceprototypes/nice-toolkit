@@ -242,9 +242,106 @@ function cleanAllCaches(baseDir, { dryRun = false, killPorts = true } = {}) {
   }
 }
 
+// ──────────────────────────────────────────────────────────────────────────────
+// Vite optimized-deps refresh
+// ──────────────────────────────────────────────────────────────────────────────
+
+// Vite pre-bundles dependencies into an optimized-deps cache. Plain Vite
+// consumers use node_modules/.vite; Storybook's Vite builder nests its own
+// under node_modules/.cache. A rebuilt linked dist (e.g. SVGR-built icons after
+// --build-icons) is ignored until these are wiped, because Vite keeps serving
+// the copy it bundled at server start.
+const VITE_CACHE_DIRS = ['.vite', '.cache/storybook', '.cache/sb-vite-plugin-externals'];
+
+/**
+ * Removes Vite's optimized-deps caches in a single project directory.
+ *
+ * @param {string} dir - Project directory containing node_modules
+ * @param {object} [options]
+ * @param {boolean} [options.dryRun=false]
+ * @returns {string[]} Paths that were removed (or would be in dry run)
+ */
+function removeViteCachesInDir(dir, { dryRun = false } = {}) {
+  const nodeModules = path.join(dir, 'node_modules');
+  if (!pathExists(nodeModules)) return [];
+
+  const removed = [];
+  for (const rel of VITE_CACHE_DIRS) {
+    const target = path.join(nodeModules, ...rel.split('/'));
+    if (!pathExists(target)) continue;
+    if (!dryRun) removePath(target);
+    removed.push(target);
+  }
+  return removed;
+}
+
+/**
+ * Invalidates Vite's optimized-deps cache across the workspace and bounces any
+ * running dev servers, so a rebuilt linked dist is actually re-bundled and
+ * served rather than read from the stale pre-bundle.
+ *
+ * The port-kill is required, not optional: a running dev server holds the
+ * optimized deps in memory and repopulates the on-disk cache on the next
+ * request, so wiping alone is a no-op against the observable symptom. Callers
+ * restart their dev server afterward to trigger re-optimization.
+ *
+ * @param {string} baseDir - Workspace root (e.g. ~/nice)
+ * @param {object} [options]
+ * @param {boolean} [options.dryRun=false]
+ * @param {boolean} [options.killPorts=true] - Set false to wipe caches only
+ */
+function refreshVite(baseDir, { dryRun = false, killPorts = true } = {}) {
+  if (!pathExists(baseDir)) {
+    log(`Workspace base not found: ${baseDir}`);
+    return;
+  }
+
+  const entries = readDir(baseDir);
+
+  // Phase 1 — bounce dev servers so they re-optimize on restart.
+  if (killPorts) {
+    const seen = new Set();
+    let killedCount = 0;
+    for (const entry of entries) {
+      const dir = path.join(baseDir, entry);
+      if (!fs.statSync(dir).isDirectory()) continue;
+      for (const port of discoverPorts(dir)) {
+        if (seen.has(port)) continue;
+        seen.add(port);
+        if (killPort(port, { dryRun })) {
+          info(`${dryRun ? 'would kill process on port' : 'killed process on port'} ${port} ${gray(`(${entry})`)}`);
+          killedCount++;
+        }
+      }
+    }
+    if (seen.size > 0 && killedCount === 0) {
+      log(`No processes bound to known ports (${[...seen].sort((a, b) => a - b).join(', ')}).`);
+    }
+  }
+
+  // Phase 2 — wipe Vite optimized-deps caches.
+  let totalRemoved = 0;
+  for (const entry of entries) {
+    const dir = path.join(baseDir, entry);
+    if (!fs.statSync(dir).isDirectory()) continue;
+    for (const target of removeViteCachesInDir(dir, { dryRun })) {
+      info(`${dryRun ? 'would remove' : 'removed'} ${gray(target)}`);
+      totalRemoved++;
+    }
+  }
+
+  if (totalRemoved === 0) {
+    log('No Vite optimized-deps caches found.');
+  } else {
+    success(`${dryRun ? 'would refresh' : 'refreshed'} Vite deps — ${totalRemoved} cache${totalRemoved === 1 ? '' : 's'} wiped; restart your dev server to re-bundle`);
+  }
+}
+
 module.exports = {
   cleanCachesInDir,
   cleanAllCaches,
+  removeViteCachesInDir,
+  refreshVite,
   discoverPorts,
   killPort,
 };

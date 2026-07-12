@@ -107,17 +107,17 @@ nice-toolkit ../nice-react-button
 nice-toolkit /Users/username/Code/nice-react-button
 ```
 
-### Clean Only (Remove Conflicting Packages)
+### Dedupe Only (Remove Conflicting Packages)
 
 ```bash
 # Remove default packages only
-nice-toolkit --clean-only
+nice-toolkit --dedupe
 
 # Remove custom packages only
-nice-toolkit --clean-only --exclude @mui/material,@mui/icons-material
+nice-toolkit --dedupe --exclude @mui/material,@mui/icons-material
 
 # Add extra packages to default list
-nice-toolkit --clean-only --add-exclude @emotion/react,@emotion/styled
+nice-toolkit --dedupe --add-exclude @emotion/react,@emotion/styled
 ```
 
 ### Custom Package Exclusion
@@ -230,7 +230,7 @@ nice-toolkit --manager yarn --add-exclude @emotion/react ../my-component --dry-r
 nice-toolkit --dry-run ../nice-react-button
 
 # See what would be cleaned without linking
-nice-toolkit --clean-only --dry-run ../nice-react-button
+nice-toolkit --dedupe --dry-run ../nice-react-button
 ```
 
 ### Skip Automatic peerDependencies Management
@@ -272,8 +272,8 @@ npm install my-package
 # Re-run the link command to clean up
 nice-toolkit ../my-component
 
-# Or use clean-only to just remove conflicts
-nice-toolkit --clean-only ../my-component
+# Or use --dedupe to just remove conflicts
+nice-toolkit --dedupe ../my-component
 ```
 
 ### Module Not Found After Linking

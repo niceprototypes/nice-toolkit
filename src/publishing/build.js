@@ -21,12 +21,18 @@ const { swapFileDepsToSemver } = require("./deps")
  * Build failures are tracked but don't halt the entire process —
  * remaining packages continue building.
  *
+ * The swap map is caller-owned and populated in place as each package is
+ * swapped, so an exception partway through the loop still leaves the
+ * already-swapped packages recorded — the orchestrator's `finally` can then
+ * restore them. (If it were a local returned value, a mid-loop throw would
+ * strand those swaps with no record to undo.)
+ *
  * @param {object[]} toPublish - Packages to build, sorted by dependency order
+ * @param {Map<string, object>} swappedDeps - Caller-owned map, populated as name → original dep values
  * @returns {{ publishable: object[], buildFailed: string[], swappedDeps: Map<string, object> }}
  */
-function buildPackages(toPublish) {
+function buildPackages(toPublish, swappedDeps = new Map()) {
   const buildFailed = []
-  const swappedDeps = new Map()
 
   for (const p of toPublish) {
     const dir = pkgDir(p.name)

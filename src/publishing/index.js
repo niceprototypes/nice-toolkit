@@ -111,35 +111,67 @@ async function publish({ packages: requestedPackages, doPublish = true, dryRun =
     }
   }
 
-  // ── 7. Build all packages ─────────────────────────────────────────────────
-  log("\nBuilding all packages...\n")
-  const { publishable, buildFailed, swappedDeps } = buildPackages(toPublish)
-
-  if (publishable.length === 0) {
-    const { fail } = require("../shared/logger")
-    fail("All builds failed. Nothing to publish.")
+  // ── 7-9. Build → publish → finalize ──────────────────────────────────────
+  // The build phase swaps every file: dep to a semver range for npm publish.
+  // Those swaps MUST be reversed no matter how this block exits: an interrupted
+  // or failed publish that leaves semver refs on disk corrupts local dev — they
+  // get swept into a later commit and break `npm install` (ETARGET on ranges
+  // that never resolve locally). The `finally` guarantees the restore.
+  // `restoreOnce` is idempotent so the happy path can restore BEFORE committing
+  // (the version-bump commit must record file: refs, not the transient semver).
+  const swappedDeps = new Map()
+  let restored = false
+  const restoreOnce = () => {
+    if (restored) return
+    restored = true
     restoreAllDeps(swappedDeps)
-    return
   }
 
-  // ── 8. Publish to npm ─────────────────────────────────────────────────────
-  // Verify npm auth right before the publish step so the user isn't blocked
-  // on login during scan/prompt/build (which don't need npm credentials).
-  if (doPublish) {
-    if (!(await verifyNpmAuth())) {
-      restoreAllDeps(swappedDeps)
+  // Node does not run `finally` on SIGINT/SIGTERM (e.g. Ctrl-C at the OTP
+  // prompt), so restore explicitly on a signal too, then exit with the
+  // conventional 128+signal code. Handlers are removed in the finally.
+  const onSignal = (signal) => {
+    restoreOnce()
+    process.exit(signal === "SIGINT" ? 130 : 143)
+  }
+  const onSigint = () => onSignal("SIGINT")
+  const onSigterm = () => onSignal("SIGTERM")
+  process.on("SIGINT", onSigint)
+  process.on("SIGTERM", onSigterm)
+
+  try {
+    // ── 7. Build all packages (populates swappedDeps in place) ──────────────
+    log("\nBuilding all packages...\n")
+    const { publishable, buildFailed } = buildPackages(toPublish, swappedDeps)
+
+    if (publishable.length === 0) {
+      const { fail } = require("../shared/logger")
+      fail("All builds failed. Nothing to publish.")
       return
     }
+
+    // ── 8. Publish to npm ─────────────────────────────────────────────────
+    // Verify npm auth right before the publish step so the user isn't blocked
+    // on login during scan/prompt/build (which don't need npm credentials).
+    if (doPublish && !(await verifyNpmAuth())) return
+
+    const { published, failed } = await releasePackages(publishable, doPublish)
+    const allFailed = [...buildFailed, ...failed]
+
+    // ── 9. Finalize — restore deps, commit, tag, push, summarize ───────────
+    // Restore BEFORE committing so the commit records file: refs (local-dev
+    // state), never the transient semver swap.
+    restoreOnce()
+    console.log("")
+    commitAndTag(published)
+    printSummary(published, allFailed, doPublish)
+  } finally {
+    // Safety net: restore on any early return, thrown error, or failure above.
+    // No-op when the happy path already restored.
+    restoreOnce()
+    process.removeListener("SIGINT", onSigint)
+    process.removeListener("SIGTERM", onSigterm)
   }
-
-  const { published, failed } = await releasePackages(publishable, doPublish)
-  const allFailed = [...buildFailed, ...failed]
-
-  // ── 9. Finalize — restore deps, commit, tag, push, summarize ─────────────
-  restoreAllDeps(swappedDeps)
-  console.log("")
-  commitAndTag(published)
-  printSummary(published, allFailed, doPublish)
 }
 
 module.exports = {

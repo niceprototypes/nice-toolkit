@@ -35,7 +35,11 @@ Options:
   --clean                    ${cyan('Kill')} dev-server ports + wipe webpack/Vite caches across every consumer
   --no-kill                  Used with ${cyan('--clean')} to skip the port-kill phase (caches only)
   --build-all                ${cyan('Rebuild')} every linked nice-* package's dist in registry tier order
+  --build-icons              ${cyan('Rebuild')} nice-icons and its dependents (nice-react-icon, …) in tier order, then --vite — the targeted build after an SVG/icon change
+  --convert [path]           With ${cyan('--build-icons')}: convert new/changed .source .ai → svg first; optional .source path scopes it — a folder (brands, brands/github) or a single .ai file (brands/github/fill.ai); omit for all
+  --vite                     ${cyan('Refresh')} Vite's optimized-deps cache + bounce dev servers so a rebuilt linked dist is re-bundled (run standalone, or automatically by --build-icons)
   --reset                    ${cyan('Chain')} --build-all → --dedupe → --clean. Use after refactors that touch foundation packages.
+  --log                      With ${cyan('--reset')}: write a timestamped build/failure report to {workspace}/.nice/reset-{timestamp}.log
   --unlink                   Restore npm packages to their original versions
   --dev                      ${cyan('Run')} dev scripts in all linked packages (rebuilds on change)
   --watch                    ${cyan('Watch')} linked package dist folders and trigger reload on change
@@ -64,6 +68,8 @@ Examples:
   ntk --dev --watch          Rebuild packages AND trigger reload on changes
   ntk --watch                Watch dist folders (use with external rebuilder)
   ntk --watch --watch-dir src Watch src/ instead of dist/
+  ntk --build-icons          Rebuild nice-icons + dependents after changing an SVG (auto-refreshes Vite)
+  ntk --vite                 Force Vite to re-bundle linked dists after an out-of-band rebuild
   ntk --reset                Rebuild all + dedupe + clean (post-refactor recovery)
 
 Notes:
