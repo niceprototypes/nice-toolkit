@@ -11,7 +11,7 @@
   },
   "bin": {
     "nice-toolkit": "nice-toolkit",
-    "ntk": "nice-toolkit"
+    "nicely": "nice-toolkit"
   },
   "files": [
     "src",

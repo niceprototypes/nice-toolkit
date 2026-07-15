@@ -1,8 +1,8 @@
 /**
- * @fileoverview Find and terminate running `ntk --dev` / `--watch` processes.
+ * @fileoverview Find and terminate running `nicely --dev` / `--watch` processes.
  *
  * `--reset` rebuilds every package's dist, dedupes node_modules, then wipes
- * caches. A concurrently-running `ntk --dev --watch` writes the same dist
+ * caches. A concurrently-running `nicely --dev --watch` writes the same dist
  * files (`rollup -c -w`) and holds node_modules references, so its output
  * races the rebuild and dedupe mutates modules under it. This module locates
  * any such instance and sends it SIGTERM — its own shutdown handler
@@ -26,17 +26,17 @@ function sleepSync(ms) {
 }
 
 /**
- * True when a process command line is a `ntk`/`nice-toolkit` invocation that
- * includes `--dev` and/or `--watch`. Both bin names (the `ntk` alias and the
+ * True when a process command line is a `nicely`/`nice-toolkit` invocation that
+ * includes `--dev` and/or `--watch`. Both bin names (the `nicely` alias and the
  * `nice-toolkit` long form) resolve to the same script, so match either.
  *
  * @param {string} args - Full process command line
  * @returns {boolean}
  */
 function isDevWatchCommand(args) {
-  // `ntk`/`nice-toolkit` as its own path segment or word — not a substring of
+  // `nicely`/`nice-toolkit` as its own path segment or word — not a substring of
   // some unrelated path.
-  const isToolkit = /(?:^|[/\s])(?:nice-toolkit|ntk)(?:\s|$)/.test(args);
+  const isToolkit = /(?:^|[/\s])(?:nice-toolkit|nicely)(?:\s|$)/.test(args);
   const isDevWatch = /\s--(?:dev|watch)\b/.test(args);
   return isToolkit && isDevWatch;
 }
@@ -81,7 +81,7 @@ function findDevWatchProcesses() {
 }
 
 /**
- * Terminate any running `ntk --dev`/`--watch` instances before a reset.
+ * Terminate any running `nicely --dev`/`--watch` instances before a reset.
  *
  * Sends SIGTERM so each instance runs its graceful shutdown (which kills its
  * detached rollup child groups), waits a grace window, then SIGKILLs anything
@@ -92,7 +92,7 @@ function findDevWatchProcesses() {
  */
 function terminateDevWatchers({ dryRun = false } = {}) {
   if (process.platform === 'win32') {
-    warn('Cannot auto-stop dev/watch on Windows — stop `ntk --dev --watch` manually before --reset.');
+    warn('Cannot auto-stop dev/watch on Windows — stop `nicely --dev --watch` manually before --reset.');
     return 0;
   }
 

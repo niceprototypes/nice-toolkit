@@ -1,0 +1,1 @@
+[2026-07-14 09:30] major: Rename the short CLI alias `ntk` to `nicely` (bin map: nice-toolkit + nicely; `ntk` removed). All help text, messages, and the dev/watch process-detection regex updated. `nice-toolkit` is unchanged. Migrate `ntk ...` -> `nicely ...`; re-link (npm link in toolkit) to regenerate the bin shim.

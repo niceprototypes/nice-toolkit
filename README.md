@@ -2,7 +2,7 @@
 
 A utility to streamline the npm linking process for React component libraries when working locally, automatically removing conflicting peer dependencies that cause "Invalid hook call" errors, duplicate React instances, and styled-components context issues.
 
-CLI binaries: `nice-toolkit` (long-form) and `ntk` (short alias).
+CLI binaries: `nice-toolkit` (long-form) and `nicely` (short alias).
 
 ## The Story: Why This Tool Exists
 

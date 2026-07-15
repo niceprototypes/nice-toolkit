@@ -82,7 +82,7 @@ function main() {
 
   if (options.bumpLevel) {
     if (!options.bumpMessage) {
-      fail('--bump <level> requires a commit message, e.g. ntk --bump major "Rename breakpoint identifiers"');
+      fail('--bump <level> requires a commit message, e.g. nicely --bump major "Rename breakpoint identifiers"');
       process.exit(1);
     }
     try {
@@ -170,7 +170,7 @@ function main() {
 
   if (options.reset) {
     info('--reset: --build-all → --dedupe → --clean');
-    // Stop any running `ntk --dev --watch` first — its rollup watchers write
+    // Stop any running `nicely --dev --watch` first — its rollup watchers write
     // the same dist files the rebuild does, and dedupe/clean mutate
     // node_modules and caches under it. SIGTERM lets each instance tear down
     // its own child processes cleanly.

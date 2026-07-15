@@ -20,10 +20,10 @@
  * **`@types/*` are intentionally excluded.** Type packages have no runtime
  * presence — removing them only suppresses build-time tsc resolution and
  * causes cascading TS7031 implicit-`any` and TS2875 `react/jsx-runtime`
- * warnings during `ntk --build-all`. The runtime singleton concern is
+ * warnings during `nicely --build-all`. The runtime singleton concern is
  * about the `react` / `react-dom` JS modules themselves, not their type
  * definitions. Power users with cross-version type-skew issues can opt
- * in via `ntk --add-exclude @types/react,@types/react-dom`.
+ * in via `nicely --add-exclude @types/react,@types/react-dom`.
  *
  * @constant {string[]}
  * @description Package categories:
@@ -32,11 +32,11 @@
  *
  * @example
  * // Override with --exclude flag
- * ntk --exclude react,react-dom ../my-lib
+ * nicely --exclude react,react-dom ../my-lib
  *
  * @example
  * // Extend with --add-exclude flag
- * ntk --add-exclude zustand,jotai ../my-lib
+ * nicely --add-exclude zustand,jotai ../my-lib
  */
 const DEFAULT_CONFLICTING_PACKAGES = [
   // React core - must be singleton for hooks to work

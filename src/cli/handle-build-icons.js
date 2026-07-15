@@ -1,8 +1,8 @@
 /**
- * @fileoverview Preflight + execution for `ntk --build-icons`.
+ * @fileoverview Preflight + execution for `nicely --build-icons`.
  *
  * `--build-icons` rebuilds nice-icons + its dependents' dist via one-shot
- * `npm run build`. A concurrently-running `ntk --dev --watch` runs `rollup -c -w`
+ * `npm run build`. A concurrently-running `nicely --dev --watch` runs `rollup -c -w`
  * over those SAME packages into the SAME dist, and every rollup build wipes
  * dist/ first (`clean: true`), so the two race — transient
  * `Could not resolve entry module "dist/types/index.d.ts"` errors and consumer
@@ -39,7 +39,7 @@ function runBuildIcons(options) {
 }
 
 /**
- * Handle `ntk --build-icons`. Auto-stops any running `ntk --dev`/`--watch`
+ * Handle `nicely --build-icons`. Auto-stops any running `nicely --dev`/`--watch`
  * first (they rebuild the same dist and would race), the same way refreshVite
  * kills dev-server ports — unless `--no-kill` is set — then runs the build.
  *
@@ -52,7 +52,7 @@ async function handleBuildIcons(options) {
   if (running.length > 0) {
     if (options.noKill) {
       // Explicit opt-out — build anyway and let the caller own the race.
-      warn(`${running.length} ntk --dev/--watch running and --no-kill set — building anyway; expect a dist race.`);
+      warn(`${running.length} nicely --dev/--watch running and --no-kill set — building anyway; expect a dist race.`);
     } else {
       // Auto-stop the dev watcher(s). terminateDevWatchers logs each process it
       // signals and no-ops (reports only) under dryRun.
@@ -63,7 +63,7 @@ async function handleBuildIcons(options) {
   const code = runBuildIcons(options);
   // Remind the user to restart the watcher we stopped, once the build is clean.
   if (code === 0 && running.length > 0 && !options.noKill && !options.dryRun) {
-    success('Icons rebuilt. Restart `ntk --dev --watch` to resume hot-reloading.');
+    success('Icons rebuilt. Restart `nicely --dev --watch` to resume hot-reloading.');
   }
   return code;
 }

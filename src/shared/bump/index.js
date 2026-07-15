@@ -3,7 +3,7 @@
  *
  * Each Nice ecosystem package records pending semver intent in a plain-text
  * file at `.nice/bump.md` under the package root. One line per entry, in the
- * form `[ts] {level}: {commit-message}`. `ntk --publish` reads every entry,
+ * form `[ts] {level}: {commit-message}`. `nicely --publish` reads every entry,
  * derives the publish commit's subject/body from them, and clears the file
  * on success.
  *

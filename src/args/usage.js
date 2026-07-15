@@ -25,10 +25,10 @@ function showUsage() {
 ${cyan('nice-toolkit')}
 
 Usage:
-  ntk <package-path> [options]
-  ntk --dedupe [path] [options]
-  ntk --watch [options]
-  ntk --publish [packages...]
+  nicely <package-path> [options]
+  nicely --dedupe [path] [options]
+  nicely --watch [options]
+  nicely --publish [packages...]
 
 Options:
   --dedupe [path]            ${cyan('Remove')} duplicate singletons (react, styled-components, etc.) from linked packages' node_modules. With a path, scope to just that package; otherwise recurse across all linked packages.
@@ -54,23 +54,23 @@ Options:
   --dry-publish              Preview what would be published without making changes
   --bump <level> <message>   Record a bump intent entry in ./.nice/bump.md
                              level: major | minor | patch
-                             Example: ntk --bump major "Rename breakpoint identifiers"
+                             Example: nicely --bump major "Rename breakpoint identifiers"
   --help, -h                 Show help
 
 Examples:
-  ntk --dedupe               Dedupe singletons across all file: linked packages recursively
-  ntk --dedupe ../my-lib     Dedupe singletons in only the specified package
-  ntk ../my-lib              Link and clean a package
-  ntk --dry-run --dedupe     Preview what would be deduped
-  ntk --publish              Publish all changed packages to npm
-  ntk --publish nice-styles,nice-react-styles  Publish specific packages
-  ntk --dev                  Run dev scripts in all linked packages
-  ntk --dev --watch          Rebuild packages AND trigger reload on changes
-  ntk --watch                Watch dist folders (use with external rebuilder)
-  ntk --watch --watch-dir src Watch src/ instead of dist/
-  ntk --build-icons          Rebuild nice-icons + dependents after changing an SVG (auto-refreshes Vite)
-  ntk --vite                 Force Vite to re-bundle linked dists after an out-of-band rebuild
-  ntk --reset                Rebuild all + dedupe + clean (post-refactor recovery)
+  nicely --dedupe               Dedupe singletons across all file: linked packages recursively
+  nicely --dedupe ../my-lib     Dedupe singletons in only the specified package
+  nicely ../my-lib              Link and clean a package
+  nicely --dry-run --dedupe     Preview what would be deduped
+  nicely --publish              Publish all changed packages to npm
+  nicely --publish nice-styles,nice-react-styles  Publish specific packages
+  nicely --dev                  Run dev scripts in all linked packages
+  nicely --dev --watch          Rebuild packages AND trigger reload on changes
+  nicely --watch                Watch dist folders (use with external rebuilder)
+  nicely --watch --watch-dir src Watch src/ instead of dist/
+  nicely --build-icons          Rebuild nice-icons + dependents after changing an SVG (auto-refreshes Vite)
+  nicely --vite                 Force Vite to re-bundle linked dists after an out-of-band rebuild
+  nicely --reset                Rebuild all + dedupe + clean (post-refactor recovery)
 
 Notes:
   ${cyan('--dedupe')} finds all file: dependencies recursively and removes duplicate
