@@ -118,10 +118,10 @@ function warn(msg) {
  * @param {string} msg - Message to log
  * @example
  * fail('Path does not exist: ../my-lib');
- * // Output: ❌ Path does not exist: ../my-lib (in red, to stderr)
+ * // Output: 💀 Path does not exist: ../my-lib (in red, to stderr)
  */
 function fail(msg) {
-  console.error(red(`❌ ${msg}`));
+  console.error(red(`💀 ${msg}`));
 }
 
 module.exports = {

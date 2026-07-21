@@ -24,6 +24,7 @@ const {
   removePath,
 } = require('../shared/fs-utils');
 const { log, info, success, fail, cyan } = require('../shared/logger');
+const { runTasks } = require('../shared/tasks');
 const { run } = require('./pm');
 const { BACKUP_DIR_NAME, BACKUP_FILE_NAME } = require('../shared/config');
 
@@ -229,7 +230,7 @@ function restorePackageVersionInPlace(packageJson, pkgName, originalVersion) {
   return false;
 }
 
-function unlinkPackages(pm, { dryRun = false } = {}) {
+async function unlinkPackages(pm, { dryRun = false } = {}) {
   const projectDir = process.cwd();
   const packageJsonPath = path.join(projectDir, 'package.json');
 
@@ -240,22 +241,26 @@ function unlinkPackages(pm, { dryRun = false } = {}) {
   }
 
   const packageJson = readJSON(packageJsonPath, { useCache: false });
-  let unlinkedCount = 0;
 
-  for (const [pkgName, originalVersion] of Object.entries(backup)) {
-    if (!isLinkedDependency(packageJson, pkgName)) continue;
+  // Each backup entry is a task: restore its version (instant, in-memory) or
+  // skip if it's no longer file:-linked. The shared runner renders the glyph
+  // line + `restored N, skipped M` tally; the single `npm install` that
+  // realises the restores runs once, after the list settles.
+  const tasks = Object.entries(backup).map(([pkgName, originalVersion]) => ({
+    label: pkgName,
+    /** @returns {import('../shared/tasks/status').Outcome} */
+    run() {
+      if (!isLinkedDependency(packageJson, pkgName)) return { kind: 'skipped', detail: 'not linked' };
+      if (dryRun) return { kind: 'done', detail: `would restore → ${originalVersion}` };
+      if (restorePackageVersionInPlace(packageJson, pkgName, originalVersion)) {
+        return { kind: 'done', detail: `→ ${originalVersion}` };
+      }
+      return { kind: 'skipped', detail: 'no matching dependency' };
+    },
+  }));
 
-    if (dryRun) {
-      info(`[dry-run] Would restore ${pkgName} to ${originalVersion}`);
-      unlinkedCount++;
-      continue;
-    }
-
-    if (restorePackageVersionInPlace(packageJson, pkgName, originalVersion)) {
-      success(`Restored ${cyan(pkgName)} to ${originalVersion}`);
-      unlinkedCount++;
-    }
-  }
+  const report = await runTasks(tasks, { verb: dryRun ? 'would restore' : 'restored' });
+  const unlinkedCount = report.done.length;
 
   if (!dryRun && unlinkedCount > 0) {
     writeJSON(packageJsonPath, packageJson);
@@ -266,8 +271,6 @@ function unlinkPackages(pm, { dryRun = false } = {}) {
     success('Installed packages from npm');
 
     cleanupBackup(projectDir);
-
-    success(`Unlinked ${unlinkedCount} package(s)`);
   } else if (!dryRun) {
     info('No linked packages to unlink');
   }

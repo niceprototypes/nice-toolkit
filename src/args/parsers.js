@@ -118,9 +118,30 @@ function findPositionalArg(args, flagsWithValues = new Set()) {
   });
 }
 
+/**
+ * Finds every positional argument (non-flag, non-flag-value), in order.
+ *
+ * The plural companion to {@link findPositionalArg} — used for subcommand
+ * targets, where a verb may be followed by several package names
+ * (`nicely publish nice-icons nice-react-icon`).
+ *
+ * @param {string[]} args - Command-line arguments array (already past the verb)
+ * @param {Set<string>} [flagsWithValues] - Flag names that consume the next token
+ * @returns {string[]} All positional tokens, in order
+ */
+function findPositionalArgs(args, flagsWithValues = new Set()) {
+  return args.filter((arg, i) => {
+    if (arg.startsWith('-')) return false;
+    const prevArg = args[i - 1];
+    if (prevArg && flagsWithValues.has(prevArg)) return false;
+    return true;
+  });
+}
+
 module.exports = {
   parseList,
   getArg,
   hasFlag,
   findPositionalArg,
+  findPositionalArgs,
 };

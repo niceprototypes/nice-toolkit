@@ -42,10 +42,11 @@ const { restoreAllDeps, commitAndTag, printSummary } = require("./finalize")
  * @returns {Promise<void>}
  */
 async function publish({ packages: requestedPackages, doPublish = true, dryRun = false } = {}) {
-  log("Scanning packages...\n")
-
   // ── 1. Discover candidates ────────────────────────────────────────────────
-  const { candidates } = scanPackages(requestedPackages)
+  // Each package scans as its own task; the shared reporter checks it off
+  // (✓ candidate / ⊘ unchanged) as `npm view` + git status resolve per package.
+  log("\nScanning packages…\n")
+  const { candidates } = await scanPackages(requestedPackages)
 
   if (candidates.length === 0) {
     info("No packages have changes to publish.")

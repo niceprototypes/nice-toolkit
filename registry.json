@@ -67,7 +67,7 @@
         "sourceAliasable": true
       },
       {
-        "name": "nice-react-typography",
+        "name": "nice-react-ink",
         "type": "react-component",
         "sourceAliasable": true
       },
@@ -90,6 +90,11 @@
       },
       {
         "name": "nice-react-tile",
+        "type": "react-component",
+        "sourceAliasable": true
+      },
+      {
+        "name": "nice-react-code",
         "type": "react-component",
         "sourceAliasable": true
       }

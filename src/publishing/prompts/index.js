@@ -19,7 +19,7 @@
  *
  * **No-intent gate.** Existing packages that have changes but no entries
  * in `.nice/bump.md` cannot be auto-accepted. The whole row renders in
- * red with `0` in the Entries column and `❌ No entries` in the Last
+ * red with `0` in the Entries column and `💀 None` in the Last
  * entry column. The menu adapts based on the no-intent state:
  *
  *   - `[a]pprove current` is omitted from the menu when the current row

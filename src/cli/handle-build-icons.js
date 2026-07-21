@@ -16,20 +16,22 @@
 const os = require('os');
 const { warn, success } = require('../shared/logger');
 const { readRegistry } = require('../shared/registry/read');
-const { buildIcons } = require('../linking/dist-builder');
+const { buildAffected } = require('../linking/dist-builder');
 const { refreshVite } = require('../linking/cache-cleaner');
 const { findDevWatchProcesses, terminateDevWatchers } = require('../linking/dev-watch-killer');
 
 /**
- * Run the icon build, then refresh Vite deps so the rebuilt dist is picked up.
+ * Run a scoped build (roots + their dependents, tier order), then refresh Vite
+ * deps so the rebuilt dist is picked up.
  *
- * @param {{ dryRun?: boolean, noKill?: boolean, convert?: boolean, convertPath?: string }} options
+ * @param {object} options - dryRun / noKill / convert / convertPath
+ * @param {string[]} roots - root package names to build (with dependents)
  * @returns {number} Process exit code (0 ok, 1 if any package build failed)
  */
-function runBuildIcons(options) {
-  const result = buildIcons({ dryRun: options.dryRun, convert: options.convert, convertPath: options.convertPath });
+async function runScopedBuild(options, roots) {
+  const result = await buildAffected(roots, { dryRun: options.dryRun, convert: options.convert, convertPath: options.convertPath });
   // A rebuilt dist is inert until Vite re-bundles it — refresh the deps cache +
-  // bounce dev servers so the new icons actually render.
+  // bounce dev servers so the new build actually renders.
   if (result.failed.length === 0) {
     const registry = readRegistry();
     const baseDir = registry.basePath.replace('~', os.homedir());
@@ -39,20 +41,22 @@ function runBuildIcons(options) {
 }
 
 /**
- * Handle `nicely --build-icons`. Auto-stops any running `nicely --dev`/`--watch`
- * first (they rebuild the same dist and would race), the same way refreshVite
- * kills dev-server ports — unless `--no-kill` is set — then runs the build.
+ * Handle a scoped `nicely build <targets>` (e.g. `build icons`). Auto-stops any
+ * running `nicely develop` first (its rollup watchers rebuild the same dist and
+ * would race) — unless `--no-kill` — then builds the roots + dependents and
+ * refreshes Vite.
  *
- * @param {object} options - Parsed CLI options
+ * @param {object} options - Parsed modifier options
+ * @param {string[]} roots - Root package names (default: the icons group)
  * @returns {Promise<number>} Exit code
  */
-async function handleBuildIcons(options) {
+async function handleBuild(options, roots = ['nice-icons']) {
   const running = findDevWatchProcesses();
 
   if (running.length > 0) {
     if (options.noKill) {
       // Explicit opt-out — build anyway and let the caller own the race.
-      warn(`${running.length} nicely --dev/--watch running and --no-kill set — building anyway; expect a dist race.`);
+      warn(`${running.length} nicely develop running and --no-kill set — building anyway; expect a dist race.`);
     } else {
       // Auto-stop the dev watcher(s). terminateDevWatchers logs each process it
       // signals and no-ops (reports only) under dryRun.
@@ -60,12 +64,15 @@ async function handleBuildIcons(options) {
     }
   }
 
-  const code = runBuildIcons(options);
+  const code = await runScopedBuild(options, roots);
   // Remind the user to restart the watcher we stopped, once the build is clean.
   if (code === 0 && running.length > 0 && !options.noKill && !options.dryRun) {
-    success('Icons rebuilt. Restart `nicely --dev --watch` to resume hot-reloading.');
+    success('Built. Restart `nicely develop` to resume hot-reloading.');
   }
   return code;
 }
 
-module.exports = { handleBuildIcons };
+/** Back-compat: the icons-scoped build is just `handleBuild` rooted at nice-icons. */
+const handleBuildIcons = (options) => handleBuild(options, ['nice-icons']);
+
+module.exports = { handleBuild, handleBuildIcons };

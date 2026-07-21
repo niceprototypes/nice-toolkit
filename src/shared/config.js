@@ -65,7 +65,7 @@ const DEFAULT_CONFLICTING_PACKAGES = [
  * to ensure the linked package uses the host project's version instead of its own.
  *
  * This is particularly important for the Nice ecosystem where all packages
- * (nice-react-button, nice-react-typography, etc.) should share the same
+ * (nice-react-button, nice-react-ink, etc.) should share the same
  * React and styled-components instances with the consuming application.
  *
  * @constant {string[]}

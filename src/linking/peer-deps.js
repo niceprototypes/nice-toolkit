@@ -49,13 +49,15 @@ function toCaretRange(version) {
  * 3. Optionally adds a prepare script for auto-build on install
  *
  * This is essential for the Nice ecosystem because all packages
- * (nice-react-button, nice-react-typography, etc.) must share the same
+ * (nice-react-button, nice-react-ink, etc.) must share the same
  * React and styled-components instances with the consuming application.
  *
  * @param {string} packageDir - Path to the package directory
  * @param {string[]} packageNames - Package names to move to peerDependencies
  * @param {object} [options] - Options object
  * @param {boolean} [options.dryRun=false] - If true, only logs changes without modifying files
+ * @param {boolean} [options.quiet=false] - Suppress this helper's own log lines
+ *   (used when a caller — e.g. the dedupe task — owns the reporting).
  * @returns {boolean} True if any changes were made (or would be made in dry-run)
  *
  * @example
@@ -66,7 +68,7 @@ function toCaretRange(version) {
  * // Preview changes without modifying
  * ensurePeerDeps('/path/to/my-lib', ['react'], { dryRun: true });
  */
-function ensurePeerDeps(packageDir, packageNames, { dryRun = false } = {}) {
+function ensurePeerDeps(packageDir, packageNames, { dryRun = false, quiet = false } = {}) {
   const pkgJsonPath = path.join(packageDir, 'package.json');
   const pkg = readJSON(pkgJsonPath, { useCache: false }); // Fresh read for modifications
 
@@ -92,7 +94,7 @@ function ensurePeerDeps(packageDir, packageNames, { dryRun = false } = {}) {
       delete pkg.dependencies[name];
       hasChanges = true;
 
-      log(`Moved ${cyan(name)} -> peerDependencies (${peerVersion})`);
+      if (!quiet) log(`Moved ${cyan(name)} -> peerDependencies (${peerVersion})`);
     }
   }
 
@@ -101,16 +103,16 @@ function ensurePeerDeps(packageDir, packageNames, { dryRun = false } = {}) {
   if (!pkg.scripts.prepare && pkg.scripts.build) {
     pkg.scripts.prepare = 'npm run build';
     hasChanges = true;
-    log('Added prepare script for auto-build on install');
+    if (!quiet) log('Added prepare script for auto-build on install');
   }
 
   // Write changes
   if (hasChanges) {
     if (dryRun) {
-      info(`[dry-run] Would update package.json in ${packageDir}`);
+      if (!quiet) info(`[dry-run] Would update package.json in ${packageDir}`);
     } else {
       writeJSON(pkgJsonPath, pkg);
-      success('Updated package.json (peerDependencies & scripts)');
+      if (!quiet) success('Updated package.json (peerDependencies & scripts)');
     }
   }
 

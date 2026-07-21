@@ -19,7 +19,7 @@ const { derivedVersion } = require("./version")
 //   VERSION = `999.999.999 → 999.999.999` plus the unicode arrow glyph
 //   LEVEL   = `(major)` / `(as-is)` / blank — 8 with one trailing space
 //   ENTRIES = bare count (e.g. `0`, `10`)
-//   LAST    = `YYYY-MM-DD HH:MM` / `❌ No entries`
+//   LAST    = `YYYY-MM-DD HH:MM` / `💀 None`
 const COL_NAME = 24
 const COL_VERSION = 28
 const COL_LEVEL = 9
@@ -68,12 +68,13 @@ function renderTable(enriched, decisions, currentIdx) {
 
     const count = candidate.intentEntries.length
     const lastEntry = candidate.intentEntries[count - 1]
-    // Has-entries rows show the newest timestamp; no-entries rows show the
-    // ❌ marker as a self-explanatory failure indicator.
-    const lastDate = lastEntry?.timestamp || "❌ No entries"
+    // Has-entries rows show the newest timestamp. A new package has no prior
+    // entry by definition — that's expected, not a failure — so it reads "N/A".
+    // A published package with no entry is the failure case: the 💀 marker.
+    const lastDate = candidate.isNew ? "N/A" : lastEntry?.timestamp || "💀 None"
 
     if (isManualPending) {
-      // Whole row red. Count + ❌ marker make the failure cause and the
+      // Whole row red. Count + 💀 marker make the failure cause and the
       // unresolved last-entry state immediately readable.
       const namePadded = candidate.name.padEnd(COL_NAME)
       const countPadded = String(count).padEnd(COL_ENTRIES)

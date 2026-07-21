@@ -12,6 +12,7 @@
 const path = require('path');
 const { pathExists, removePath } = require('../shared/fs-utils');
 const { log, info, success, fail, gray } = require('../shared/logger');
+const { runTasks } = require('../shared/tasks');
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Single Package Cleaning
@@ -34,6 +35,8 @@ const { log, info, success, fail, gray } = require('../shared/logger');
  * @param {string[]} packages - Array of package names to remove
  * @param {object} [options] - Options object
  * @param {boolean} [options.dryRun=false] - If true, only logs what would be removed
+ * @param {boolean} [options.quiet=false] - Suppress this helper's own per-package
+ *   log lines (used when a caller — e.g. the dedupe task — owns the reporting).
  * @returns {{ removed: string[], skipped: string[] }} Results of the clean operation
  *
  * @example
@@ -51,14 +54,14 @@ const { log, info, success, fail, gray } = require('../shared/logger');
  * });
  * console.log(`Would remove ${result.removed.length} packages`);
  */
-function removeConflictsInDir(dir, packages, { dryRun = false } = {}) {
+function removeConflictsInDir(dir, packages, { dryRun = false, quiet = false } = {}) {
   const nodeModulesPath = path.join(dir, 'node_modules');
   const removed = [];
   const skipped = [];
 
   // Check if node_modules exists
   if (!pathExists(nodeModulesPath)) {
-    info(`No node_modules in ${path.basename(dir)}, skipping`);
+    if (!quiet) info(`No node_modules in ${path.basename(dir)}, skipping`);
     return { removed, skipped };
   }
 
@@ -67,22 +70,22 @@ function removeConflictsInDir(dir, packages, { dryRun = false } = {}) {
     return { removed, skipped };
   }
 
-  log(`Cleaning conflicts in ${gray(dir)}`);
+  if (!quiet) log(`Cleaning conflicts in ${gray(dir)}`);
 
   for (const pkg of packages) {
     const pkgPath = path.join(nodeModulesPath, pkg);
 
     if (pathExists(pkgPath)) {
       if (dryRun) {
-        info(`[dry-run] Would remove ${pkg}`);
+        if (!quiet) info(`[dry-run] Would remove ${pkg}`);
         removed.push(pkg);
       } else {
         try {
           removePath(pkgPath);
-          success(`Removed ${gray(pkg)}`);
+          if (!quiet) success(`Removed ${gray(pkg)}`);
           removed.push(pkg);
         } catch (e) {
-          fail(`Failed to remove ${pkg}: ${e.message}`);
+          if (!quiet) fail(`Failed to remove ${pkg}: ${e.message}`);
           skipped.push(pkg);
         }
       }
@@ -133,7 +136,7 @@ function removeConflictsInDir(dir, packages, { dryRun = false } = {}) {
  * });
  * console.log(`Would dedupe ${result.totalCleaned} packages`);
  */
-function dedupeLinkedPackages(projectDir, packages, options = {}) {
+async function dedupeLinkedPackages(projectDir, packages, options = {}) {
   const {
     dryRun = false,
     skipPeerCheck = false,
@@ -161,24 +164,25 @@ function dedupeLinkedPackages(projectDir, packages, options = {}) {
   }
   console.log('');
 
-  // Clean each package
+  // Each linked package is a task: enforce peers + strip conflicting singletons,
+  // reporting `removed N` (or `no conflicts`) as the gray detail. The helpers run
+  // `quiet` so the shared runner owns the one line per package + the tally.
   let totalRemoved = 0;
+  const tasks = Array.from(linkedPackages).map((pkgPath) => ({
+    label: path.basename(pkgPath),
+    /** @returns {import('../shared/tasks/status').Outcome} */
+    run() {
+      if (!skipPeerCheck && peerEnforce.length > 0) {
+        ensurePeerDeps(pkgPath, peerEnforce, { dryRun, quiet: true });
+      }
+      const { removed } = removeConflictsInDir(pkgPath, packages, { dryRun, quiet: true });
+      totalRemoved += removed.length;
+      const verb = dryRun ? 'would remove' : 'removed';
+      return { kind: 'done', detail: removed.length ? `${verb} ${removed.length}` : 'no conflicts' };
+    },
+  }));
 
-  for (const pkgPath of linkedPackages) {
-    const pkgName = path.basename(pkgPath);
-    log(`Cleaning ${cyan(pkgName)}...`);
-
-    // Optionally enforce peer dependencies
-    if (!skipPeerCheck && peerEnforce.length > 0) {
-      ensurePeerDeps(pkgPath, peerEnforce, { dryRun });
-    }
-
-    // Remove conflicting packages
-    const { removed } = removeConflictsInDir(pkgPath, packages, { dryRun });
-    totalRemoved += removed.length;
-  }
-
-  success(`Cleaned ${linkedPackages.size} linked package(s)`);
+  await runTasks(tasks, { verb: dryRun ? 'would clean' : 'cleaned' });
 
   return {
     totalCleaned: linkedPackages.size,

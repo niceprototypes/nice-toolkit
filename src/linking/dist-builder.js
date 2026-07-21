@@ -14,13 +14,35 @@
  */
 
 const path = require('path');
-const { execSync, spawnSync } = require('child_process');
+const { spawn } = require('child_process');
+const { runTasks } = require('../shared/tasks');
+
+/**
+ * Run `npm run build` in `dir` as an async child, capturing combined output so
+ * the heart spinner (which owns the line) isn't clobbered by rollup's logs.
+ * Resolves with the exit code and the captured output (shown only on failure).
+ *
+ * @param {string} dir - Package directory
+ * @param {string[]} extra - Extra args appended after `npm run build --`
+ * @returns {Promise<{ code: number, output: string }>}
+ */
+function spawnBuild(dir, extra) {
+  return new Promise((resolve) => {
+    const args = ['run', 'build', ...(extra.length ? ['--', ...extra] : [])];
+    const child = spawn('npm', args, { cwd: dir });
+    let output = '';
+    child.stdout.on('data', (d) => { output += d; });
+    child.stderr.on('data', (d) => { output += d; });
+    child.on('close', (code) => resolve({ code: code == null ? 1 : code, output }));
+    child.on('error', (err) => resolve({ code: 1, output: String((err && err.message) || err) }));
+  });
+}
 const { readJSON, pathExists } = require('../shared/fs-utils');
 const { getAllPackages } = require('../shared/registry/query');
 const { readRegistry } = require('../shared/registry/read');
 const { resolveAffected } = require('../publishing/graph');
 const os = require('os');
-const { log, info, success, fail, warn, cyan, gray, green, red } = require('../shared/logger');
+const { info, cyan } = require('../shared/logger');
 
 /**
  * Resolves the absolute directory for a registered package.
@@ -54,94 +76,52 @@ function resolvePkgDir(name) {
  *   package name). Used e.g. to pass `--convert` to nice-icons only.
  * @returns {{ built: string[], skipped: string[], failed: string[], output: Object<string,string> }}
  */
-function buildPackages(packages, { dryRun = false, capture = false, extraArgs = {} } = {}) {
-  const built = [];
-  const skipped = [];
-  const failed = [];
-  // Per-package annotation (skip/fail reason) shown in the final list.
-  const reasons = {};
-  // Per-package captured build output (only populated when `capture` is set).
+async function buildPackages(packages, { dryRun = false, capture = false, extraArgs = {} } = {}) {
+  // Per-package captured build output (retained for the reset log / shown on fail).
+  /** @type {Object<string,string>} */
   const output = {};
 
-  for (const entry of packages) {
+  // Each package becomes a typed task; the shared runner owns the spinner,
+  // glyph lines, failure output, and summary tally (see shared/tasks). A skip
+  // or dry-run resolves synchronously, so the runner renders it with no spinner
+  // — preserving byte-parity with the old hand-rolled loop.
+  const tasks = packages.map((entry) => {
     const name = entry.name;
-    const dir = resolvePkgDir(name);
-
-    if (!pathExists(dir)) {
-      warn(`${name}: directory not found at ${gray(dir)} — skipping`);
-      skipped.push(name);
-      reasons[name] = 'directory not found';
-      continue;
-    }
-
-    let pkg;
-    try {
-      pkg = readJSON(path.join(dir, 'package.json'), { useCache: false });
-    } catch (e) {
-      fail(`${name}: cannot read package.json — ${e.message}`);
-      failed.push(name);
-      reasons[name] = 'cannot read package.json';
-      continue;
-    }
-
-    if (!pkg.scripts || !pkg.scripts.build) {
-      log(`${gray('—')} ${gray(name)} (no build script)`);
-      skipped.push(name);
-      reasons[name] = 'no build script';
-      continue;
-    }
-
-    if (dryRun) {
-      info(`would build ${cyan(name)}`);
-      built.push(name);
-      continue;
-    }
-
     const extra = extraArgs[name] || [];
-    info(`Building ${cyan(name)}${extra.length ? ` ${gray(extra.join(' '))}` : ''}…`);
-    if (capture) {
-      // Capture combined output so the reset log can include the error, while
-      // still echoing it live (buffered per package, printed on completion).
-      const res = spawnSync('npm', ['run', 'build', ...(extra.length ? ['--', ...extra] : [])], { cwd: dir, encoding: 'utf8' });
-      if (res.stdout) process.stdout.write(res.stdout);
-      if (res.stderr) process.stderr.write(res.stderr);
-      if (res.status === 0) {
-        built.push(name);
-      } else {
-        fail(`${name}: build failed`);
-        failed.push(name);
-        reasons[name] = 'build failed';
-        output[name] = `${res.stdout || ''}${res.stderr || ''}`.trim();
-      }
-    } else {
-      try {
-        execSync(`npm run build${extra.length ? ` -- ${extra.join(' ')}` : ''}`, { cwd: dir, stdio: 'inherit' });
-        built.push(name);
-      } catch (e) {
-        fail(`${name}: build failed`);
-        failed.push(name);
-        reasons[name] = 'build failed';
-      }
-    }
-  }
+    return {
+      label: name,
+      activeLabel: `Building ${name}${extra.length ? ` ${extra.join(' ')}` : ''}`,
+      /** @returns {import('../shared/tasks/status').Outcome | Promise<import('../shared/tasks/status').Outcome>} */
+      run() {
+        const dir = resolvePkgDir(name);
+        if (!pathExists(dir)) return { kind: 'skipped', detail: 'directory not found' };
 
-  const verb = dryRun ? 'would build' : 'built';
-  const summary = `${verb} ${built.length}, skipped ${skipped.length}, failed ${failed.length}`;
-  if (failed.length > 0) {
-    fail(summary);
-  } else {
-    success(summary);
-  }
+        let pkg;
+        try {
+          pkg = readJSON(path.join(dir, 'package.json'), { useCache: false });
+        } catch (e) {
+          return { kind: 'failed', detail: 'cannot read package.json' };
+        }
 
-  // Per-package list, grouped built → skipped → failed. Names are padded to a
-  // common width so the gray skip/fail reasons line up in a column.
-  const allNames = [...built, ...skipped, ...failed];
-  const pad = allNames.reduce((max, n) => Math.max(max, n.length), 0);
-  for (const name of built) console.log(`  ${green('✓')} ${name}`);
-  for (const name of skipped) console.log(`  ${gray('⊘')} ${name.padEnd(pad)}  ${gray(reasons[name] || '')}`);
-  for (const name of failed) console.log(`  ${red('✗')} ${name.padEnd(pad)}  ${gray(reasons[name] || '')}`);
+        if (!pkg.scripts || !pkg.scripts.build) return { kind: 'skipped', detail: 'no build script' };
+        if (dryRun) return { kind: 'done', detail: 'would build' };
 
-  return { built, skipped, failed, output };
+        return spawnBuild(dir, extra).then((res) => {
+          const combined = res.output.trim();
+          if (res.code === 0) {
+            if (capture) output[name] = combined;
+            return { kind: 'done' };
+          }
+          // Retain for the reset log; the runner prints `output` beneath the fail line.
+          output[name] = combined;
+          return { kind: 'failed', detail: 'build failed', output: combined };
+        });
+      },
+    };
+  });
+
+  const report = await runTasks(tasks, { verb: dryRun ? 'would build' : 'built' });
+  return { built: report.done, skipped: report.skipped, failed: report.failed, output };
 }
 
 /**
@@ -155,7 +135,7 @@ function buildPackages(packages, { dryRun = false, capture = false, extraArgs = 
  * @param {boolean} [options.dryRun=false] - Preview without running builds
  * @returns {{ built: string[], skipped: string[], failed: string[] }}
  */
-function buildAllPackages({ dryRun = false, capture = false } = {}) {
+async function buildAllPackages({ dryRun = false, capture = false } = {}) {
   return buildPackages(getAllPackages(), { dryRun, capture });
 }
 
@@ -178,21 +158,39 @@ function buildAllPackages({ dryRun = false, capture = false } = {}) {
  *   the conversion (e.g. "brands/github").
  * @returns {{ built: string[], skipped: string[], failed: string[] }}
  */
-function buildIcons({ dryRun = false, convert = false, convertPath } = {}) {
-  const { changed, dependents } = resolveAffected(['nice-icons']);
+async function buildAffected(rootNames, { dryRun = false, convert = false, convertPath, capture = false } = {}) {
+  const { changed, dependents } = resolveAffected(rootNames);
   const affected = new Set([...changed, ...dependents]);
   // Preserve tier order: filter the flat tier-ordered list, don't iterate the set.
   const entries = getAllPackages().filter((entry) => affected.has(entry.name));
-  info(`--build-icons: ${cyan(entries.map((entry) => entry.name).join(' → '))}`);
-  // Conversion is a nice-icons concern — pass --convert only to its build.
-  const extraArgs = convert
+  if (entries.length === 0) {
+    info(`build: no registered packages matched ${cyan(rootNames.join(', '))}`);
+    return { built: [], skipped: [], failed: [] };
+  }
+  info(`build: ${cyan(entries.map((entry) => entry.name).join(' → '))}`);
+  // Conversion is a nice-icons concern — pass --convert only to its build, and
+  // only when nice-icons is actually in the affected set.
+  const extraArgs = convert && affected.has('nice-icons')
     ? { 'nice-icons': ['--convert', ...(convertPath ? [convertPath] : [])] }
     : {};
-  return buildPackages(entries, { dryRun, extraArgs });
+  return buildPackages(entries, { dryRun, capture, extraArgs });
+}
+
+/**
+ * Rebuilds nice-icons and every registered package that transitively depends on
+ * it, in tier order — the targeted build for an SVG/icon-asset change. Thin
+ * wrapper over {@link buildAffected} rooted at nice-icons (the `icons` group).
+ *
+ * @param {object} [options] - forwarded to buildAffected
+ * @returns {{ built: string[], skipped: string[], failed: string[] }}
+ */
+async function buildIcons(options = {}) {
+  return buildAffected(['nice-icons'], options);
 }
 
 module.exports = {
   buildPackages,
   buildAllPackages,
+  buildAffected,
   buildIcons,
 };

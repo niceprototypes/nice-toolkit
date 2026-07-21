@@ -21,10 +21,19 @@ const { execSync } = require('child_process');
 const { pathExists, removePath, readDir } = require('../shared/fs-utils');
 const { log, info, success, warn, gray } = require('../shared/logger');
 
-// Cache directories created by webpack (CRA) and Vite under node_modules.
-// Add framework-specific entries here when new frameworks join the
-// workspace (e.g. Next.js `.next/cache`, Astro `dist`, Parcel `.parcel-cache`).
-const CACHE_DIRS = ['.cache', '.vite'];
+// Generic build-tool cache that `clean` always wipes — webpack/CRA, Storybook,
+// and Babel all cache under node_modules/.cache. Kept framework-agnostic on
+// purpose: `clean` knows nothing about any specific bundler.
+const CACHE_DIRS = ['.cache'];
+
+// Framework-specific caches, opt-in per flag so the core `clean` stays agnostic.
+// Adding a framework is one entry here + one flag in the CLI (e.g. `--next`) —
+// nothing in the core clean path changes.
+//   vite → node_modules/.vite   (Vite's optimized-deps cache; `clean --vite`)
+//   next → node_modules/.next   (future; `clean --next`)
+const TOOL_CACHE_DIRS = {
+  vite: ['.vite'],
+};
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Port discovery
@@ -153,12 +162,15 @@ function killPort(port, { dryRun = false } = {}) {
  * @param {boolean} [options.dryRun=false]
  * @returns {string[]} Paths that were removed (or would be in dry run)
  */
-function cleanCachesInDir(dir, { dryRun = false } = {}) {
+function cleanCachesInDir(dir, { dryRun = false, tools = [] } = {}) {
   const nodeModules = path.join(dir, 'node_modules');
   if (!pathExists(nodeModules)) return [];
 
+  // Generic caches always; each requested tool's caches on top.
+  const cacheDirs = [...CACHE_DIRS, ...tools.flatMap((tool) => TOOL_CACHE_DIRS[tool] || [])];
+
   const removed = [];
-  for (const cacheName of CACHE_DIRS) {
+  for (const cacheName of cacheDirs) {
     const target = path.join(nodeModules, cacheName);
     if (!pathExists(target)) continue;
     if (!dryRun) removePath(target);
@@ -174,8 +186,10 @@ function cleanCachesInDir(dir, { dryRun = false } = {}) {
 /**
  * Walks every immediate subdirectory of the workspace base path. For each
  * consumer that declares dev-server ports (via .env or package.json scripts),
- * kills any process bound to those ports. Then wipes build-tool caches
- * (.cache, .vite) across the workspace.
+ * kills any process bound to those ports. Then wipes the generic build-tool
+ * cache (.cache) across the workspace — plus any opt-in tool caches named in
+ * `tools` (e.g. `['vite']` → also .vite). The core is framework-agnostic; tool
+ * caches are added only when a flag asks for them.
  *
  * The port-kill step is required because a running dev server holds an
  * in-memory module graph and repopulates its on-disk cache immediately on
@@ -186,8 +200,9 @@ function cleanCachesInDir(dir, { dryRun = false } = {}) {
  * @param {object} [options]
  * @param {boolean} [options.dryRun=false]
  * @param {boolean} [options.killPorts=true] - Set false to wipe caches only
+ * @param {string[]} [options.tools=[]] - Tool-cache keys to also wipe (see TOOL_CACHE_DIRS)
  */
-function cleanAllCaches(baseDir, { dryRun = false, killPorts = true } = {}) {
+function cleanAllCaches(baseDir, { dryRun = false, killPorts = true, tools = [] } = {}) {
   if (!pathExists(baseDir)) {
     log(`Workspace base not found: ${baseDir}`);
     return;
@@ -226,7 +241,7 @@ function cleanAllCaches(baseDir, { dryRun = false, killPorts = true } = {}) {
   for (const entry of entries) {
     const dir = path.join(baseDir, entry);
     if (!fs.statSync(dir).isDirectory()) continue;
-    const removed = cleanCachesInDir(dir, { dryRun });
+    const removed = cleanCachesInDir(dir, { dryRun, tools });
     for (const target of removed) {
       const verb = dryRun ? 'would remove' : 'removed';
       info(`${verb} ${gray(target)}`);

@@ -107,7 +107,7 @@ function getAllDependencies(pkg) {
  * //   '/path/to/nice-react-button',
  * //   '/path/to/nice-react-styles',
  * //   '/path/to/nice-styles',
- * //   '/path/to/nice-react-typography',
+ * //   '/path/to/nice-react-ink',
  * //   ...
  * // }
  *

@@ -6,9 +6,9 @@
  */
 
 const path = require('path');
+const { execFile } = require('child_process');
 const { readJSON } = require('../../shared/fs-utils');
 const { NICE_BASE } = require('../constants');
-const { runShell } = require('./shell');
 
 /**
  * Resolves the absolute filesystem path for a package.
@@ -25,15 +25,19 @@ function pkgDir(name) {
  * Returns the published npm version of a package, or `null` when the
  * package has never been published (or `npm view` errors).
  *
+ * Async (non-blocking) so the caller's scan loop yields to the event loop
+ * between packages — that keeps the heartbeat spinner animating and lets
+ * SIGINT (Ctrl+C) interrupt the scan instead of being swallowed per-package.
+ *
  * @param {string} name - Package name
- * @returns {string|null}
+ * @returns {Promise<string|null>}
  */
 function getNpmVersion(name) {
-  try {
-    return runShell(`npm view ${name} version 2>/dev/null`);
-  } catch {
-    return null;
-  }
+  return new Promise((resolve) => {
+    execFile('npm', ['view', name, 'version'], { encoding: 'utf8' }, (err, stdout) => {
+      resolve(err ? null : String(stdout).trim());
+    });
+  });
 }
 
 /**
