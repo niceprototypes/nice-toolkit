@@ -55,4 +55,47 @@ function resolveTargets(tokens) {
   return { empty: false, all: false, roots: [...new Set(roots)] };
 }
 
-module.exports = { resolveTargets, GROUPS, ALL };
+/** Compile a `*`/`?` glob into an anchored RegExp (other regex chars escaped). */
+function globToRegExp(glob) {
+  const escaped = glob
+    .replace(/[.+^${}()|[\]\\]/g, '\\$&')
+    .replace(/\*/g, '.*')
+    .replace(/\?/g, '.');
+  return new RegExp(`^${escaped}$`);
+}
+
+/**
+ * Expand target tokens against a candidate name set, supporting exact names and
+ * `*`/`?` globs. The reusable core for any verb that accepts a set of names —
+ * `build` (packages via `nice-react-*`, icons via `carat-*`), `publish`, etc. A
+ * token matching nothing is returned in `unmatched` so the caller can reject the
+ * command rather than silently act on a subset.
+ *
+ * @param {string[]} tokens - Positional target tokens (groups already expanded).
+ * @param {Iterable<string>} candidates - Valid names to match against.
+ * @returns {{ matched: string[], unmatched: string[] }} matched names (deduped,
+ *   sorted) and the tokens that matched nothing.
+ */
+function expandTargets(tokens, candidates) {
+  const names = [...candidates];
+  const nameSet = new Set(names);
+  const matched = new Set();
+  const unmatched = [];
+
+  for (const token of tokens) {
+    if (/[*?]/.test(token)) {
+      const re = globToRegExp(token);
+      const hits = names.filter((n) => re.test(n));
+      if (hits.length) hits.forEach((h) => matched.add(h));
+      else unmatched.push(token);
+    } else if (nameSet.has(token)) {
+      matched.add(token);
+    } else {
+      unmatched.push(token);
+    }
+  }
+
+  return { matched: [...matched].sort(), unmatched };
+}
+
+module.exports = { resolveTargets, expandTargets, GROUPS, ALL };

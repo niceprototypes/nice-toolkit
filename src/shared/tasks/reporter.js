@@ -19,6 +19,7 @@
 
 const { startHeartSpinner } = require('../heart-spinner');
 const { success, fail } = require('../logger');
+const { formatOutcome } = require('./status');
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Reporter
@@ -26,15 +27,18 @@ const { success, fail } = require('../logger');
 
 /**
  * @typedef {object} Reporter
- * @property {(activeLabel: string) => (finalLine: string) => void} active
- *   Begin the spinner for an in-flight (async) task; returns a `stop(finalLine)`
- *   that clears the animation and prints the persistent line.
- * @property {(line: string) => void} instant
- *   Print a resolved line with no spinner (for tasks that settle synchronously).
+ * @property {(activeLabel: string) => (label: string, outcome: import('./status').Outcome) => void} active
+ *   Begin the spinner for an in-flight (async) task; returns an `end(label,
+ *   outcome)` that clears the animation and settles the task (line reporter
+ *   prints it; table reporter records a row).
+ * @property {(label: string, outcome: import('./status').Outcome) => void} instant
+ *   Settle a task that resolved synchronously (no spinner).
  * @property {(text: string) => void} raw
  *   Emit captured child output verbatim (shown beneath a failure line).
  * @property {(report: { done: string[], skipped: string[], failed: string[] }, verb: string) => void} summary
  *   Print the `verb N, skipped N, failed N` tally (green if clean, red if any failed).
+ * @property {(report?: object) => void} [finalize]
+ *   Flush any batched output once every task has settled (table reporter renders here).
  * @property {() => void} pause  Suspend rendering so a task can own stdin.
  * @property {() => void} resume Resume rendering after `pause()`.
  */
@@ -47,15 +51,31 @@ const { success, fail } = require('../logger');
  * @returns {Reporter}
  */
 function createReporter({ stream = process.stdout } = {}) {
+  // The in-flight async task's spinner handle + its label, tracked so
+  // pause()/resume() can suspend and restore it around a task that must read
+  // stdin (the publish OTP re-prompt). Null whenever no async task is mid-flight.
+  let liveStop = null;
+  let liveLabel = null;
+
   return {
     active(activeLabel) {
       // heart-spinner owns the two-space indent and the animation lifecycle.
-      const stop = startHeartSpinner(activeLabel);
-      return (finalLine) => stop(finalLine);
+      liveLabel = activeLabel;
+      liveStop = startHeartSpinner(activeLabel);
+      return (label, outcome) => {
+        const settled = formatOutcome(label, outcome);
+        // Normal path: the spinner is live, so clear it and print the settled
+        // line in one step. If a pause() left it suspended without a resume(),
+        // print the line directly instead.
+        if (liveStop) liveStop(settled);
+        else stream.write(`  ${settled}\n`);
+        liveStop = null;
+        liveLabel = null;
+      };
     },
 
-    instant(line) {
-      stream.write(`  ${line}\n`);
+    instant(label, outcome) {
+      stream.write(`  ${formatOutcome(label, outcome)}\n`);
     },
 
     raw(text) {
@@ -68,12 +88,24 @@ function createReporter({ stream = process.stdout } = {}) {
       else success(line);
     },
 
-    // No-ops until the concurrent live-region backend implements suspend/resume
-    // (needed by publish's interactive OTP prompt). The surface is defined now
-    // so callers can be written against it before that backend lands.
-    pause() {},
+    // Line reporter renders each task as it settles, so there is nothing to
+    // flush at the end — the table reporter overrides this.
+    finalize() {},
 
-    resume() {},
+    // Suspend the in-flight spinner so a task can borrow the terminal for stdin
+    // (e.g. re-prompting for an OTP mid-publish). Clears the animated line; the
+    // task's persistent line is still printed later by the `end` from active().
+    pause() {
+      if (liveStop) {
+        liveStop(); // stop with no final line → clears the animation, restores cursor
+        liveStop = null;
+      }
+    },
+
+    // Restart the spinner for the still-in-flight task after the stdin work.
+    resume() {
+      if (liveLabel && !liveStop) liveStop = startHeartSpinner(liveLabel);
+    },
   };
 }
 

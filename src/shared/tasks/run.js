@@ -19,7 +19,6 @@
  * @module shared/tasks/run
  */
 
-const { formatOutcome } = require('./status');
 const { createReporter } = require('./reporter');
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -91,6 +90,9 @@ async function runTasks(tasks, { verb = 'done', reporter = createReporter(), sig
   }
 
   if (summary) reporter.summary(report, verb);
+  // A backend that batches its output (e.g. the table reporter) renders here,
+  // once every task has settled. The default line reporter has no-op finalize.
+  if (reporter.finalize) reporter.finalize(report);
   return report;
 }
 
@@ -110,24 +112,24 @@ async function settle(task, ctx, reporter) {
   } catch (err) {
     // Synchronous throw — render instantly, no spinner engaged.
     const outcome = toFailure(err);
-    reporter.instant(formatOutcome(task.label, outcome));
+    reporter.instant(task.label, outcome);
     return outcome;
   }
 
   if (!isPromise(started)) {
     // Instant decision (skip / dry-run): no animation.
-    reporter.instant(formatOutcome(task.label, started));
+    reporter.instant(task.label, started);
     return started;
   }
 
-  const stop = reporter.active(task.activeLabel ?? task.label);
+  const end = reporter.active(task.activeLabel ?? task.label);
   let outcome;
   try {
     outcome = await started;
   } catch (err) {
     outcome = toFailure(err);
   }
-  stop(formatOutcome(task.label, outcome));
+  end(task.label, outcome);
   return outcome;
 }
 

@@ -24,12 +24,15 @@ const { findDevWatchProcesses, terminateDevWatchers } = require('../linking/dev-
  * Run a scoped build (roots + their dependents, tier order), then refresh Vite
  * deps so the rebuilt dist is picked up.
  *
- * @param {object} options - dryRun / noKill / convert / convertPath
+ * @param {object} options - dryRun / noKill / convert / convertPath / convertTargets
  * @param {string[]} roots - root package names to build (with dependents)
  * @returns {number} Process exit code (0 ok, 1 if any package build failed)
  */
 async function runScopedBuild(options, roots) {
-  const result = await buildAffected(roots, { dryRun: options.dryRun, convert: options.convert, convertPath: options.convertPath });
+  // The icon names to regenerate before building (from `--convert a b c`, or the
+  // matched set for an icon-name target). Empty converts every `.source` `.ai`.
+  const convertTargets = options.convertTargets || [];
+  const result = await buildAffected(roots, { dryRun: options.dryRun, convert: options.convert, convertTargets });
   // A rebuilt dist is inert until Vite re-bundles it — refresh the deps cache +
   // bounce dev servers so the new build actually renders.
   if (result.failed.length === 0) {

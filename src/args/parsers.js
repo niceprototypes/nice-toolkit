@@ -70,6 +70,31 @@ function getArg(args, name) {
 }
 
 /**
+ * Gets every consecutive value following a flag, up to the next flag (a token
+ * starting with `-`) or the end of the args. The multi-value companion to
+ * {@link getArg} — for flags that take a list, e.g.
+ * `--convert carat-top carat-bottom carat-left`. Returns `[]` when the flag is
+ * absent or bare (`--convert` with nothing after it).
+ *
+ * @param {string[]} args - Command-line arguments array
+ * @param {string} name - Flag name to search for (e.g., "--convert")
+ * @returns {string[]} Values following the flag, in order
+ *
+ * @example
+ * getMultiArg(["--convert", "carat-top", "carat-left", "--dry-run"], "--convert")
+ * // => ["carat-top", "carat-left"]
+ */
+function getMultiArg(args, name) {
+  const index = args.indexOf(name);
+  if (index === -1) return [];
+  const values = [];
+  for (let i = index + 1; i < args.length && !args[i].startsWith('-'); i++) {
+    values.push(args[i]);
+  }
+  return values;
+}
+
+/**
  * Checks if a flag is present in the arguments array
  *
  * @param {string[]} args - Command-line arguments array
@@ -127,20 +152,33 @@ function findPositionalArg(args, flagsWithValues = new Set()) {
  *
  * @param {string[]} args - Command-line arguments array (already past the verb)
  * @param {Set<string>} [flagsWithValues] - Flag names that consume the next token
+ * @param {Set<string>} [multiValueFlags] - Flag names that consume every token
+ *   after them up to the next flag (e.g. `--convert a b c`); their whole value
+ *   run is excluded from the positionals.
  * @returns {string[]} All positional tokens, in order
  */
-function findPositionalArgs(args, flagsWithValues = new Set()) {
-  return args.filter((arg, i) => {
-    if (arg.startsWith('-')) return false;
+function findPositionalArgs(args, flagsWithValues = new Set(), multiValueFlags = new Set()) {
+  const positionals = [];
+  let inMultiValueRun = false;
+  args.forEach((arg, i) => {
+    if (arg.startsWith('-')) {
+      // A flag ends any prior multi-value run and starts a new one only when it
+      // is itself a list-consuming flag.
+      inMultiValueRun = multiValueFlags.has(arg);
+      return;
+    }
+    if (inMultiValueRun) return; // token inside a multi-value flag's value run
     const prevArg = args[i - 1];
-    if (prevArg && flagsWithValues.has(prevArg)) return false;
-    return true;
+    if (prevArg && flagsWithValues.has(prevArg)) return; // single-value flag's value
+    positionals.push(arg);
   });
+  return positionals;
 }
 
 module.exports = {
   parseList,
   getArg,
+  getMultiArg,
   hasFlag,
   findPositionalArg,
   findPositionalArgs,

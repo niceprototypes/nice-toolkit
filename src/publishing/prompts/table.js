@@ -10,7 +10,7 @@ const { derivedVersion } = require("./version")
  * @param {object[]} enriched - candidates with intent attached
  * @param {Map<string, Decision>} decisions - per-candidate lifecycle map
  * @param {number} currentIdx - index of the row being prompted on (-1 to
- *   render with no row highlighted, used after [3] Accept remaining)
+ *   render with no row highlighted, used after [A]pprove all)
  */
 // Column widths used by both the header and each body row. Kept as constants
 // so the two stay in lock-step — change one, change the other implicitly.

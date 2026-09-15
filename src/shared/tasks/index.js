@@ -10,10 +10,12 @@
 
 const { runTasks } = require('./run');
 const { createReporter } = require('./reporter');
+const { createTableReporter } = require('./table-reporter');
 const { formatOutcome } = require('./status');
 
 module.exports = {
   runTasks,
   createReporter,
+  createTableReporter,
   formatOutcome,
 };

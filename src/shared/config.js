@@ -17,18 +17,18 @@
  * - "Cannot read properties of null reading 'useContext'" (styled-components context mismatch)
  * - "Multiple instances of styled-components detected" (theming issues)
  *
- * **`@types/*` are intentionally excluded.** Type packages have no runtime
- * presence — removing them only suppresses build-time tsc resolution and
- * causes cascading TS7031 implicit-`any` and TS2875 `react/jsx-runtime`
- * warnings during `nicely --build-all`. The runtime singleton concern is
- * about the `react` / `react-dom` JS modules themselves, not their type
- * definitions. Power users with cross-version type-skew issues can opt
- * in via `nicely --add-exclude @types/react,@types/react-dom`.
+ * **`@types/react` / `@types/react-dom` are included.** A duplicate physical
+ * copy gives TypeScript two distinct `FC` identities and breaks declaration
+ * emit (TS2883). Removing them from a linked package means its own tsc and
+ * jest resolve React and its types from the workspace root
+ * (`~/nice/node_modules`, installed from `~/nice/package.json`), which dedupe
+ * never touches.
  *
  * @constant {string[]}
  * @description Package categories:
  *   - **React core**: react, react-dom, scheduler, react-is
  *   - **Styling**: styled-components, @emotion/react, @emotion/styled
+ *   - **React types**: @types/react, @types/react-dom
  *
  * @example
  * // Override with --exclude flag

@@ -42,7 +42,7 @@ Flags:
   --no-npm                 publish: bump/build/commit/push but skip npm publish
   --vite                   clean: only Vite's optimized-deps cache (bounce servers)
   --no-kill                clean/build/reset: skip the dev-server port-kill
-  --convert [path]         build icons: convert new .source .ai → svg first (folder / .ai / all)
+  --convert [names…]       build icons: regenerate .source .ai → svg first (space-separated icon names; omit = all)
   --log                    reset: write a timestamped build report to {workspace}/.nice/
   --no-reload              dev: rebuild only (no reload trigger)
   --reload-only            dev: reload trigger only (for an external rebuilder)

@@ -13,7 +13,24 @@ const fs = require("fs")
 const { ALL_PACKAGES } = require("./constants")
 const { pkgDir, getNpmVersion, getLocalVersion, getChangeStatus } = require("./helpers")
 const { resolveAffected } = require("./graph")
-const { runTasks } = require("../shared/tasks")
+const { readBumpIntent } = require("../shared/bump")
+const { runTasks, createTableReporter } = require("../shared/tasks")
+const { glyphFor } = require("../shared/tasks/status")
+const { gray, yellow, red } = require("../shared/logger")
+
+/**
+ * Maps a settled scan task to its aligned table row: `[package, changes,
+ * latest entry]`. Cells are colored here; the table reporter only aligns them.
+ * The Changes cell is already colored by the task (blank / yellow / red); the
+ * Latest-entry cell (the most recent `.nice/bump.md` message) renders gray.
+ *
+ * @param {string} label - Package name.
+ * @param {object} outcome - Settled outcome carrying `changes` and `entry`.
+ * @returns {string[]} One colored cell per header.
+ */
+function scanRow(label, outcome) {
+  return [`${glyphFor(outcome)} ${label}`, outcome.changes || "", outcome.entry ? gray(outcome.entry) : ""]
+}
 
 /**
  * Whether a registered package has a directory on disk. Returns false
@@ -69,18 +86,25 @@ async function scanPackages(requestedPackages) {
       const npmVersion = await getNpmVersion(name)
       const { commitsSincePublish, dirty, hasTag } = getChangeStatus(name, npmVersion)
 
-      // Requested packages (and their graph dependents) are always candidates.
-      // An auto-scan qualifies a package on any of: bumped-but-unpublished,
-      // never published, real commits since a publish tag, or uncommitted work.
-      const isDependent = dependentSet ? dependentSet.has(name) : false
-      const qualifies = dependentSet
-        ? true
-        : (npmVersion && localVersion !== npmVersion) ||
-          !npmVersion ||
-          (hasTag && commitsSincePublish > 0) ||
-          dirty > 0
+      // The package's bump intent, read once: its presence drives the yellow/red
+      // Changes color, and its most recent message is the Latest-entry column.
+      const { entries } = readBumpIntent(pkgDir(name))
+      const entry = entries.length > 0 ? entries[entries.length - 1].message : ""
 
-      if (!qualifies) return { kind: "skipped", detail: "no changes" }
+      // Real change signals, independent of a force-include: bumped-but-unpublished,
+      // never published, commits since a publish tag, or uncommitted work.
+      const hasChanges =
+        (npmVersion && localVersion !== npmVersion) ||
+        !npmVersion ||
+        (hasTag && commitsSincePublish > 0) ||
+        dirty > 0
+      // Requested packages (and their graph dependents) are always candidates;
+      // an auto-scan only qualifies a package that actually has changes.
+      const isDependent = dependentSet ? dependentSet.has(name) : false
+      const qualifies = dependentSet ? true : hasChanges
+
+      // Non-candidates still get a table row — an empty Changes cell.
+      if (!qualifies) return { kind: "skipped", changes: "", entry }
 
       candidates.push({
         name,
@@ -92,18 +116,31 @@ async function scanPackages(requestedPackages) {
         isDependent,
       })
 
-      const detail = !npmVersion
-        ? "new"
-        : dirty > 0
-          ? `${dirty} uncommitted`
-          : isDependent
-            ? "dependent"
-            : "changes"
-      return { kind: "done", detail }
+      // Changes cell for the table. Uncommitted work is flagged: yellow, or RED
+      // when the package has no recorded bump intent (.nice/bump.md empty) — you
+      // have local changes but haven't declared how to version them. A package
+      // named on the CLI but with no real change reads "requested", not "changes".
+      let changes
+      if (!npmVersion) {
+        changes = "new"
+      } else if (dirty > 0) {
+        const label = `${dirty} uncommitted`
+        changes = entries.length > 0 ? yellow(label) : red(label)
+      } else if (isDependent) {
+        changes = "dependent"
+      } else if (hasChanges) {
+        changes = "changes"
+      } else {
+        changes = "requested"
+      }
+      return { kind: "done", changes, entry }
     },
   }))
 
-  await runTasks(tasks, { verb: "scanned", summary: false })
+  // Render an aligned Package / Changes / Latest-entry table (col widths from
+  // visible width, so colored cells still line up) once every task has settled.
+  const reporter = createTableReporter({ headers: ["", "Changes", "Latest entry"], toRow: scanRow })
+  await runTasks(tasks, { reporter, summary: false })
   return { candidates, changedSet, dependentSet }
 }
 

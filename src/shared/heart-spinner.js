@@ -13,24 +13,9 @@
  * @module shared/heart-spinner
  */
 
-const HEART = '♥'; // ♥ — U+2665 takes ANSI color (unlike the emoji ❤).
+const { HEART, BRAND, paint, SHOW_CURSOR, HIDE_CURSOR, CLEAR_LINE } = require('./palette');
+
 const FRAME_MS = 120;
-
-// nice brand palette as truecolor RGB — a cool teal → cyan → blue → violet → pink cycle.
-const BRAND = [
-  [110, 249, 194], // #6ef9c2
-  [7, 231, 231], //   #07e7e7
-  [21, 184, 255], //  #15b8ff
-  [125, 125, 255], // #7d7dff
-  [186, 145, 250], // #ba91fa
-  [255, 175, 220], // #ffafdc
-];
-
-const paint = ([r, g, b], s) => `\x1b[38;2;${r};${g};${b}m${s}\x1b[0m`;
-
-const SHOW_CURSOR = '\x1b[?25h';
-const HIDE_CURSOR = '\x1b[?25l';
-const CLEAR_LINE = '\r\x1b[K';
 
 // Restore the cursor if we're killed mid-spin (otherwise it stays hidden).
 let active = 0;

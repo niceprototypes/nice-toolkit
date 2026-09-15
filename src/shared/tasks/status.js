@@ -17,7 +17,7 @@
  * @module shared/tasks/status
  */
 
-const { gray, red } = require('../logger');
+const { gray, red, yellow } = require('../logger');
 
 // ──────────────────────────────────────────────────────────────────────────────
 // The Status union
@@ -36,14 +36,24 @@ const { gray, red } = require('../logger');
  */
 
 /**
+ * A task completed, but with non-fatal warnings (e.g. a package reloaded while
+ * its type-checker emitted diagnostics). `detail` is the gray suffix; `count`
+ * (optional) is the warning tally the concurrent develop reporter renders as
+ * `⚠ label  (N warnings)`. Terminal like `done` — the work still finished.
+ * @typedef {{ kind: 'warned', detail?: string, count?: number }} WarnedStatus
+ */
+
+/**
  * A task failed. `detail` is the gray one-line reason; `output` (optional) is
  * captured child output the reporter prints beneath the failure line.
  * @typedef {{ kind: 'failed', detail: string, output?: string }} FailedStatus
  */
 
 /**
- * The terminal outcome a task's `run()` resolves to.
- * @typedef {DoneStatus | SkippedStatus | FailedStatus} Outcome
+ * The terminal outcome a task's `run()` resolves to. `warned` is used by the
+ * concurrent develop reporter; the sequential terminal scripts only ever return
+ * `done | skipped | failed`.
+ * @typedef {DoneStatus | SkippedStatus | WarnedStatus | FailedStatus} Outcome
  */
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -73,6 +83,14 @@ function formatOutcome(label, outcome) {
         : `✓ ${label}`;
     case 'skipped':
       return `${gray('⊘')} ${label}  ${gray(outcome.detail)}`;
+    case 'warned': {
+      const suffix = outcome.count
+        ? gray(`(${outcome.count} warning${outcome.count === 1 ? '' : 's'})`)
+        : outcome.detail
+          ? gray(outcome.detail)
+          : '';
+      return suffix ? `${yellow('⚠')} ${label}  ${suffix}` : `${yellow('⚠')} ${label}`;
+    }
     case 'failed':
       return `${red('✗')} ${label}  ${gray(outcome.detail)}`;
     default: {
@@ -83,6 +101,28 @@ function formatOutcome(label, outcome) {
   }
 }
 
+/**
+ * The status glyph alone, colored by kind — for callers (e.g. the table
+ * reporter's `toRow`) that compose their own cells and just need the shared
+ * icon. Single-sources the vocabulary with {@link formatOutcome}.
+ *
+ * @param {Outcome} outcome
+ * @returns {string} The colored glyph (`✓` / `⊘` / `⚠` / `✗`).
+ */
+function glyphFor(outcome) {
+  switch (outcome.kind) {
+    case 'done': return '✓';
+    case 'skipped': return gray('⊘');
+    case 'warned': return yellow('⚠');
+    case 'failed': return red('✗');
+    default: {
+      const _never = /** @type {never} */ (outcome);
+      return String(_never);
+    }
+  }
+}
+
 module.exports = {
   formatOutcome,
+  glyphFor,
 };

@@ -5,9 +5,9 @@
  * For each iteration, the full candidate table is re-rendered with the
  * current package highlighted, and a letter-keyed menu is shown:
  *
- *   [a]pprove current       Apply the recommended level, advance
+ *   [Enter] approve current Apply the recommended level, advance
  *   [e]dit current          Prompt for a specific level, advance
- *   approve [r]emaining     Apply recommendations to this and every
+ *   [a]pprove all           Apply recommendations to this and every
  *                           remaining pending package, finish
  *   [v]iew logs             Print .nice/bump.md entries for current,
  *                           re-prompt (does not advance)
@@ -22,9 +22,9 @@
  * red with `0` in the Entries column and `💀 None` in the Last
  * entry column. The menu adapts based on the no-intent state:
  *
- *   - `[a]pprove current` is omitted from the menu when the current row
- *     has no bump notes — there is no recommended level to apply.
- *   - `approve [r]emaining` is omitted when any remaining pending row
+ *   - `[Enter] approve current` is omitted from the menu when the current
+ *     row has no bump notes — there is no recommended level to apply.
+ *   - `[a]pprove all` is omitted when any remaining pending row
  *     has no bump notes — pressing it would just bounce the cursor to
  *     the first no-notes row anyway.
  *
@@ -32,10 +32,10 @@
  * no-notes row. This prevents silently shipping a major-impact refactor
  * under a patch bump just because nobody recorded intent.
  *
- * Input: `a` / `e` / `r` / `v` are the menu keys. Esc (or empty Enter)
- * cancels. The inner edit prompt accepts `p` / `m` / `M` / `s`, with
- * Enter falling back to the recommended level (or, when no intent is
- * recorded, to skip).
+ * Input: `a` / `e` / `v` are the menu keys and Enter approves the current
+ * row. Esc (or `c` / `cancel`) aborts. The inner edit prompt accepts
+ * `p` / `m` / `M` / `s`, with Enter falling back to the recommended level
+ * (or, when no intent is recorded, to skip).
  *
  * @module publisher/prompts
  *
@@ -83,10 +83,10 @@ async function promptVersionBumps(changedCandidates, dependentCandidates) {
     // per keystroke).
     renderTable(enriched, decisions, currentIdx)
 
-    // [a]pprove is only meaningful when the current row has bump notes —
-    // otherwise there's nothing to approve, because no level was recommended.
-    // approve [r]emaining is only meaningful when no remaining pending row
-    // needs a manual level — otherwise the user would press it and
+    // [Enter] approve current is only meaningful when the current row has bump
+    // notes — otherwise there's nothing to approve, because no level was
+    // recommended. [a]pprove all is only meaningful when no remaining pending
+    // row needs a manual level — otherwise the user would press it and
     // immediately bounce into the first no-notes row anyway. Hiding the
     // options upfront beats presenting them and rejecting the keystroke.
     const currentIsManual = requiresManualLevel(current)
@@ -97,17 +97,17 @@ async function promptVersionBumps(changedCandidates, dependentCandidates) {
     // `\x1b` (Escape byte) must be explicitly accepted for bare-Esc to
     // resolve in promptKey — the helper's `acceptKeys.includes('\x1b')`
     // gate filters it out otherwise. Enter is always handled separately by
-    // promptKey and resolves to `""` regardless of acceptedKeys.
+    // promptKey and resolves to `""` regardless of acceptedKeys, so [Enter]
+    // (approve current) needs no key registered — only its label is gated.
     const menuParts = []
     const acceptedKeys = ["e", "v", "\x1b"]
     if (!currentIsManual) {
-      menuParts.push("[A]pprove current")
-      acceptedKeys.push("a")
+      menuParts.push("[Enter] Approve current")
     }
     menuParts.push("[E]dit current")
     if (!anyManualRemaining) {
-      menuParts.push("Approve [r]emaining")
-      acceptedKeys.push("r")
+      menuParts.push("[A]pprove all")
+      acceptedKeys.push("a")
     }
     menuParts.push("[V]iew logs")
     menuParts.push("[Esc] Cancel")
@@ -115,11 +115,11 @@ async function promptVersionBumps(changedCandidates, dependentCandidates) {
     const rawAction = (await promptKey(menuParts.join("\n") + "\n: ", acceptedKeys)).trim()
     const action = rawAction.toLowerCase()
 
-    // [Esc] / Enter / `c` / `cancel` — abort the entire publish, returning
-    // null to the caller so no version bumps are committed. Bare Enter
-    // (resolves to "") and `c` / `cancel` remain accepted for the non-TTY
-    // fallback path (full-line prompt).
-    if (action === "\x1b" || action === "" || action === "c" || action === "cancel") {
+    // [Esc] / `c` / `cancel` — abort the entire publish, returning null to the
+    // caller so no version bumps are committed. `c` / `cancel` remain accepted
+    // for the non-TTY fallback path (full-line prompt). Enter no longer aborts;
+    // it approves the current row (handled below).
+    if (action === "\x1b" || action === "c" || action === "cancel") {
       info("Aborted.")
       return null
     }
@@ -136,14 +136,13 @@ async function promptVersionBumps(changedCandidates, dependentCandidates) {
       continue
     }
 
-    // approve [r]emaining — accept the current row and every subsequent
-    // pending row at their recommended levels in one shot. Already-accepted
-    // rows (reached via earlier [e] backtracking, hypothetically) are
-    // skipped so a user-edited level is never overwritten. No-intent rows
-    // are also skipped — they require [e]dit to pick a level explicitly.
-    // If any were skipped the cursor jumps to the first one so the user
-    // can address it; otherwise the loop terminates as before.
-    if (action === "r") {
+    // [a]pprove all — accept the current row and every subsequent pending row
+    // at their recommended levels in one shot. Already-accepted rows (reached
+    // via earlier [e] backtracking, hypothetically) are skipped so a user-edited
+    // level is never overwritten. No-intent rows are also skipped — they require
+    // [e]dit to pick a level explicitly. If any were skipped the cursor jumps to
+    // the first one so the user can address it; otherwise the loop terminates.
+    if (action === "a") {
       const skipped = []
       for (let i = currentIdx; i < enriched.length; i++) {
         const c = enriched[i]
@@ -180,10 +179,11 @@ async function promptVersionBumps(changedCandidates, dependentCandidates) {
       continue
     }
 
-    // [a]pprove — accept the recommendation and advance. No-intent rows are
-    // refused defensively (the menu hides the option for those rows, so
-    // this guard only fires if the user types `a` through a non-TTY path).
-    if (action === "a") {
+    // [Enter] approve current — accept the recommendation and advance. Enter
+    // resolves to "" here (promptKey handles it regardless of acceptedKeys).
+    // No-intent rows are refused (the menu hides [Enter] for those): warn and
+    // re-prompt so a no-notes row is never shipped at a guessed level.
+    if (action === "") {
       if (requiresManualLevel(current)) {
         warn(
           `${current.name} has no bump notes in .nice/bump.md. Use [e]dit current to pick a level.`

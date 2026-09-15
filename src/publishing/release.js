@@ -1,120 +1,171 @@
 /**
  * @fileoverview Publish phase
  *
- * Publishes built packages to npm in rapid succession with reactive OTP management.
- * Packages are already built and deps swapped — each publish only runs
- * npm publish with --ignore-scripts.
+ * Publishes built packages to npm as a `runTasks` checklist — one line per
+ * package, checked off (`✓ name@version`) as each publish succeeds. npm's own
+ * `npm notice` tarball output is captured and discarded on success; only on a
+ * failure is the captured error rendered beneath the failed (`✗`) line.
  *
- * OTP codes are reused until npm rejects them. On rejection, the user is
- * re-prompted up to MAX_OTP_RETRIES times per package. If retries are
- * exhausted, the remaining packages are skipped (the auth state is broken).
+ * Packages are already built and deps swapped — each publish only runs
+ * `npm publish --ignore-scripts`.
+ *
+ * OTP codes are primed once before the checklist and reused until npm rejects
+ * one. A rejection re-prompts (pausing the spinner so the prompt owns the line)
+ * up to MAX_OTP_RETRIES times per package. If retries are exhausted, the auth
+ * state is broken, so every remaining package is skipped.
  *
  * @module publisher/release
  */
 
-const { log, info, success, warn, fail } = require("../shared/logger")
-const { runShell, pkgDir } = require("./helpers")
+const { info, log } = require("../shared/logger")
+const { runTasks, createReporter } = require("../shared/tasks")
+const { runShellCapture, pkgDir } = require("./helpers")
 const { createOtpManager, isOtpError } = require("./otp")
 
 const MAX_OTP_RETRIES = 3
 
 /**
- * Publishes a single package, retrying on OTP errors up to
- * MAX_OTP_RETRIES times. On retry, the OTP manager is invalidated so the
- * user is re-prompted.
+ * Combine a failed execSync error's captured streams into one text blob. npm
+ * writes its diagnostics to stderr; stdout is included as a fallback.
  *
- * Three terminal outcomes:
- * - `{ ok: true }` — publish succeeded
- * - `{ ok: false, fatal: false }` — non-OTP error; caller should record
- *   the failure and continue with the next package
- * - `{ ok: false, fatal: true }` — OTP retries exhausted; auth is broken
- *   so the caller should halt the entire publish phase
+ * @param {any} e - The error thrown by execSync
+ * @returns {string}
+ */
+function errorText(e) {
+  const captured = [e.stderr, e.stdout].filter(Boolean).map(String).join("").trim()
+  return captured || (e && e.message ? String(e.message) : String(e))
+}
+
+/**
+ * A short one-line reason for the failed task line, drawn from npm's output —
+ * the first line that reads like an error, else the first non-empty line.
+ *
+ * @param {string} text - Full captured error text
+ * @returns {string}
+ */
+function shortReason(text) {
+  const lines = text.split("\n").map((l) => l.trim()).filter(Boolean)
+  const errLine = lines.find((l) => /npm error|error\b|E[A-Z]{2,}|\b4\d\d\b/i.test(l))
+  return (errLine || lines[0] || "publish failed").slice(0, 100)
+}
+
+/**
+ * Publishes a single package, retrying on OTP errors up to MAX_OTP_RETRIES
+ * times, and resolves to a task Outcome (never throws). The npm output is
+ * captured: on success it is dropped; on failure it rides along as the
+ * Outcome's `output` so the reporter can print it beneath the failed line.
  *
  * @param {object} pkg - Built package to publish (`{ name, newVersion }`)
  * @param {ReturnType<typeof createOtpManager>} otp - OTP manager
- * @returns {Promise<{ ok: true } | { ok: false, fatal: boolean }>}
+ * @param {import("../shared/tasks/reporter").Reporter} reporter - active reporter (for pause/resume)
+ * @param {() => void} markHalted - called when OTP retries are exhausted
+ * @returns {Promise<import("../shared/tasks/status").Outcome>}
  */
-async function publishOnce(pkg, otp) {
+async function publishTask(pkg, otp, reporter, markHalted) {
   const dir = pkgDir(pkg.name)
   let attempts = 0
 
   while (attempts <= MAX_OTP_RETRIES) {
-    // Force a new prompt on retries (attempts > 0)
-    const code = await otp.get(attempts > 0)
+    // attempts 0 reuses the primed code (no prompt). A retry re-prompts, first
+    // pausing the spinner so readline owns the line, then restoring it.
+    let code
+    if (attempts === 0) {
+      code = await otp.get()
+    } else {
+      reporter.pause()
+      try {
+        code = await otp.get(true)
+      } finally {
+        reporter.resume()
+      }
+    }
 
     try {
-      // --ignore-scripts skips rebuild — packages are already built in the build phase
-      runShell(`npm publish --otp=${code} --ignore-scripts --access public`, { cwd: dir })
-      success(`Published ${pkg.name}@${pkg.newVersion}`)
-      return { ok: true }
+      // --ignore-scripts skips rebuild — packages are already built in the build
+      // phase. Output is captured (runShellCapture), so npm's notices stay hidden.
+      runShellCapture(`npm publish --otp=${code} --ignore-scripts --access public`, { cwd: dir })
+      return { kind: "done" }
     } catch (e) {
-      const errMsg = e.message || ""
+      const text = errorText(e)
 
-      if (!isOtpError(errMsg)) {
-        fail(`Publish failed for ${pkg.name}: ${errMsg}`)
-        return { ok: false, fatal: false }
+      if (!isOtpError(text)) {
+        return { kind: "failed", detail: shortReason(text), output: text }
       }
 
       attempts++
       otp.invalidate()
 
       if (attempts > MAX_OTP_RETRIES) {
-        fail(`OTP failed ${MAX_OTP_RETRIES} times for ${pkg.name}. Stopping publish phase.`)
-        return { ok: false, fatal: true }
+        markHalted()
+        return {
+          kind: "failed",
+          detail: `OTP rejected ${MAX_OTP_RETRIES}× — publish halted`,
+          output: text,
+        }
       }
-
-      warn(`OTP rejected for ${pkg.name} (attempt ${attempts}/${MAX_OTP_RETRIES}), requesting new code...`)
+      // else: loop and re-prompt for a fresh code
     }
   }
 
-  // Unreachable — the while-loop returns on every path. This satisfies
-  // static analyzers that don't track the exhaustive returns above.
-  return { ok: false, fatal: true }
+  // Unreachable — every path in the loop returns. Satisfies static analyzers.
+  markHalted()
+  return { kind: "failed", detail: "OTP retries exhausted" }
 }
 
 /**
- * Publishes packages to npm with reactive OTP management.
+ * Publishes packages to npm as a checklist with reactive OTP management.
  *
  * @param {object[]} publishable - Built packages ready to publish
  * @param {boolean} doPublish - Whether to actually publish to npm
  * @returns {Promise<{ published: string[], failed: string[] }>}
  */
 async function releasePackages(publishable, doPublish) {
-  const published = []
-  const failed = []
+  const reporter = createReporter()
 
+  // --no-npm: the bump/build/commit still happen upstream; render the queue as
+  // skipped and report every package as "published" so commit/tag proceeds.
   if (!doPublish) {
-    info("--no-npm: skipping npm publish.")
-    for (const p of publishable) {
-      published.push(p.name)
-    }
-    return { published, failed }
+    info(`--no-npm: skipping npm publish for ${publishable.length} package(s).`)
+    const tasks = publishable.map((pkg) => ({
+      label: `${pkg.name}@${pkg.newVersion}`,
+      run: () => ({ kind: "skipped", detail: "--no-npm" }),
+    }))
+    await runTasks(tasks, { reporter, summary: false })
+    return { published: publishable.map((p) => p.name), failed: [] }
   }
 
   log(`\nPublishing ${publishable.length} package(s)...\n`)
 
   const otp = createOtpManager()
+  // Prime the OTP once, before the checklist, so the prompt never fights a live
+  // spinner. Reused for every package; only a rejection triggers a re-prompt.
+  await otp.get()
 
-  for (let pkgIndex = 0; pkgIndex < publishable.length; pkgIndex++) {
-    const pkg = publishable[pkgIndex]
-    const result = await publishOnce(pkg, otp)
+  // Shared kill-switch: once OTP retries are exhausted the auth state is broken,
+  // so every subsequent task skips instantly instead of hammering npm.
+  let halted = false
 
-    if (result.ok) {
-      published.push(pkg.name)
-      continue
-    }
+  const tasks = publishable.map((pkg) => ({
+    label: `${pkg.name}@${pkg.newVersion}`,
+    activeLabel: `Publishing ${pkg.name}@${pkg.newVersion}`,
+    run: () => {
+      if (halted) return { kind: "skipped", detail: "publish halted" }
+      return publishTask(pkg, otp, reporter, () => {
+        halted = true
+      })
+    },
+  }))
 
-    failed.push(pkg.name)
+  const report = await runTasks(tasks, { verb: "published", reporter, summary: false })
 
-    if (result.fatal) {
-      // Auth is broken — skip the rest of the queue and surface them as failed.
-      const remaining = publishable.slice(pkgIndex + 1)
-      for (const r of remaining) {
-        warn(`Skipped ${r.name} (publish phase halted)`)
-        failed.push(r.name)
-      }
-      return { published, failed }
-    }
+  // Map task outcomes back to package names for the pipeline. A halted skip
+  // counts as a failure (the package did not publish), matching prior behavior.
+  const published = []
+  const failed = []
+  for (const pkg of publishable) {
+    const outcome = report.outcomes.get(`${pkg.name}@${pkg.newVersion}`)
+    if (outcome && outcome.kind === "done") published.push(pkg.name)
+    else failed.push(pkg.name)
   }
 
   return { published, failed }

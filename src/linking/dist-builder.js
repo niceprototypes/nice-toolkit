@@ -153,12 +153,13 @@ async function buildAllPackages({ dryRun = false, capture = false } = {}) {
  * @param {object} [options]
  * @param {boolean} [options.dryRun=false] - Preview without running builds
  * @param {boolean} [options.convert=false] - Pass `--convert` to nice-icons'
- *   build so it turns new `.source` `.ai` files into SVGs (pdf2svg) first.
- * @param {string} [options.convertPath] - Optional `.source` subpath to scope
- *   the conversion (e.g. "brands/github").
+ *   build so it turns `.source` `.ai` files into SVGs first.
+ * @param {string[]} [options.convertTargets=[]] - `.source` targets scoping the
+ *   conversion — each a folder ("carat-bottom", "brands/github") or a single
+ *   `.ai` file, forwarded as `--convert <targets…>`. Empty converts all `.source`.
  * @returns {{ built: string[], skipped: string[], failed: string[] }}
  */
-async function buildAffected(rootNames, { dryRun = false, convert = false, convertPath, capture = false } = {}) {
+async function buildAffected(rootNames, { dryRun = false, convert = false, convertTargets = [], capture = false } = {}) {
   const { changed, dependents } = resolveAffected(rootNames);
   const affected = new Set([...changed, ...dependents]);
   // Preserve tier order: filter the flat tier-ordered list, don't iterate the set.
@@ -169,9 +170,10 @@ async function buildAffected(rootNames, { dryRun = false, convert = false, conve
   }
   info(`build: ${cyan(entries.map((entry) => entry.name).join(' → '))}`);
   // Conversion is a nice-icons concern — pass --convert only to its build, and
-  // only when nice-icons is actually in the affected set.
+  // only when nice-icons is actually in the affected set. `convertTargets` scopes
+  // it to specific icons (e.g. the expanded `carat-*` set); empty converts all.
   const extraArgs = convert && affected.has('nice-icons')
-    ? { 'nice-icons': ['--convert', ...(convertPath ? [convertPath] : [])] }
+    ? { 'nice-icons': ['--convert', ...convertTargets] }
     : {};
   return buildPackages(entries, { dryRun, capture, extraArgs });
 }

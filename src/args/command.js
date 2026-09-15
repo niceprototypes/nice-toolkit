@@ -9,7 +9,7 @@
  * @module args/command
  */
 
-const { getArg, hasFlag, parseList } = require('./parsers');
+const { getArg, getMultiArg, hasFlag, parseList } = require('./parsers');
 
 /** The verbs the router dispatches. */
 const VERBS = ['link', 'unlink', 'publish', 'build', 'dedupe', 'clean', 'reset', 'develop', 'bump'];
@@ -34,7 +34,14 @@ const LEGACY = {
 };
 
 /** Flags that consume the following token as their value (for positional split). */
-const FLAGS_WITH_VALUES = new Set(['--exclude', '--add-exclude', '--manager', '--convert', '--dir', '--watch-dir']);
+const FLAGS_WITH_VALUES = new Set(['--exclude', '--add-exclude', '--manager', '--dir', '--watch-dir']);
+
+/**
+ * Flags that consume every token after them up to the next flag — a list value.
+ * `--convert carat-top carat-bottom carat-left` converts several icons in one
+ * build; the whole run is kept out of the positional targets.
+ */
+const MULTI_VALUE_FLAGS = new Set(['--convert']);
 
 /**
  * Levenshtein distance — for "did you mean?" suggestions on an unknown verb.
@@ -105,8 +112,9 @@ function parseModifiers(args, { conflictingPackages, pm: defaultPM }) {
   if (addExclude) packagesToRemove = [...new Set([...packagesToRemove, ...parseList(addExclude)])];
 
   const forcedPM = getArg(args, '--manager');
-  const convertRaw = getArg(args, '--convert');
-  const convertPath = convertRaw && !convertRaw.startsWith('-') ? convertRaw : undefined;
+  // `--convert` takes a list: the icon names to regenerate before building
+  // (`--convert carat-top carat-bottom`). Bare `--convert` → [] → convert all.
+  const convertTargets = getMultiArg(args, '--convert');
   const watchDir = getArg(args, '--dir') || getArg(args, '--watch-dir');
 
   return {
@@ -117,7 +125,7 @@ function parseModifiers(args, { conflictingPackages, pm: defaultPM }) {
     skipPeerCheck: hasFlag(args, '--skip-peer-check'),
     vite: hasFlag(args, '--vite'),
     convert: hasFlag(args, '--convert'),
-    convertPath,
+    convertTargets,
     log: hasFlag(args, '--log'),
     reloadOnly: hasFlag(args, '--reload-only'),
     noReload: hasFlag(args, '--no-reload'),
@@ -128,4 +136,4 @@ function parseModifiers(args, { conflictingPackages, pm: defaultPM }) {
   };
 }
 
-module.exports = { parseCommand, parseModifiers, VERBS, LEGACY, FLAGS_WITH_VALUES };
+module.exports = { parseCommand, parseModifiers, VERBS, LEGACY, FLAGS_WITH_VALUES, MULTI_VALUE_FLAGS };
