@@ -147,6 +147,18 @@
         "type": "react-component",
         "sourceAliasable": true
       }
+    ],
+    [
+      {
+        "name": "nice-storybook-theme",
+        "type": "plugin",
+        "sourceAliasable": false
+      },
+      {
+        "name": "nice-storybook-navigation",
+        "type": "plugin",
+        "sourceAliasable": false
+      }
     ]
   ]
 }
