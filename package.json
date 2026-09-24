@@ -20,7 +20,7 @@
     "README.md"
   ],
   "scripts": {
-    "test": "node nice-toolkit --help"
+    "test": "node nice-toolkit --help && node --test test/*.test.js"
   },
   "keywords": [
     "npm",

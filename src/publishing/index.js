@@ -28,6 +28,7 @@ const { resolveAffected, buildReverseDependencyMap } = require("./graph")
 const { scanPackages } = require("./scan")
 const { displayCandidates } = require("./display")
 const { promptVersionBumps } = require("./prompts")
+const { sortByPublishOrder } = require("./order")
 const { buildPackages } = require("./build")
 const { releasePackages } = require("./release")
 const { restoreAllDeps, commitAndTag, printSummary } = require("./finalize")
@@ -74,15 +75,7 @@ async function publish({ packages: requestedPackages, doPublish = true, dryRun =
   }
 
   // ── 4. Sort by dependency order ───────────────────────────────────────────
-  const orderMap = new Map()
-  let orderIndex = 0
-  for (const tier of PUBLISH_TIERS) {
-    for (const name of tier) {
-      orderMap.set(name, orderIndex)
-    }
-    orderIndex++
-  }
-  toPublish.sort((a, b) => (orderMap.get(a.name) || 99) - (orderMap.get(b.name) || 99))
+  sortByPublishOrder(toPublish, PUBLISH_TIERS)
 
   // ── 5. Confirm plan ──────────────────────────────────────────────────────
   console.log("")
