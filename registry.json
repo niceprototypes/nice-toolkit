@@ -18,6 +18,11 @@
         "sourceAliasable": false
       },
       {
+        "name": "nice-svg-generator",
+        "type": "cli",
+        "sourceAliasable": false
+      },
+      {
         "name": "nice-config-rollup",
         "type": "foundation",
         "sourceAliasable": false
