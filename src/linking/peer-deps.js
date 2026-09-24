@@ -46,7 +46,10 @@ function toCaretRange(version) {
  * Performs the following:
  * 1. Moves packages from dependencies to peerDependencies
  * 2. Converts version ranges to caret notation for flexibility
- * 3. Optionally adds a prepare script for auto-build on install
+ *
+ * It never adds a `prepare` script: nice-* packages must not carry one (npm
+ * runs it on every `file:` install, cascading rebuilds across consumers).
+ * Rebuilds are explicit — see `dist-builder.js` (`nicely build all`).
  *
  * This is essential for the Nice ecosystem because all packages
  * (nice-react-button, nice-react-ink, etc.) must share the same
@@ -78,7 +81,6 @@ function ensurePeerDeps(packageDir, packageNames, { dryRun = false, quiet = fals
   pkg.peerDependencies = pkg.peerDependencies || {};
   pkg.devDependencies = pkg.devDependencies || {};
   pkg.dependencies = pkg.dependencies || {};
-  pkg.scripts = pkg.scripts || {};
 
   // Move specified packages to peerDependencies
   for (const name of packageNames) {
@@ -98,21 +100,13 @@ function ensurePeerDeps(packageDir, packageNames, { dryRun = false, quiet = fals
     }
   }
 
-  // Add prepare script if there's a build script but no prepare script
-  // This ensures the package builds when linked via file: protocol
-  if (!pkg.scripts.prepare && pkg.scripts.build) {
-    pkg.scripts.prepare = 'npm run build';
-    hasChanges = true;
-    if (!quiet) log('Added prepare script for auto-build on install');
-  }
-
   // Write changes
   if (hasChanges) {
     if (dryRun) {
       if (!quiet) info(`[dry-run] Would update package.json in ${packageDir}`);
     } else {
       writeJSON(pkgJsonPath, pkg);
-      if (!quiet) success('Updated package.json (peerDependencies & scripts)');
+      if (!quiet) success('Updated package.json (peerDependencies)');
     }
   }
 

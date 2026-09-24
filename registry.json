@@ -72,7 +72,7 @@
         "sourceAliasable": true
       },
       {
-        "name": "nice-react-tooltip",
+        "name": "nice-react-popover",
         "type": "react-component",
         "sourceAliasable": true
       }
@@ -95,6 +95,16 @@
       },
       {
         "name": "nice-react-code",
+        "type": "react-component",
+        "sourceAliasable": true
+      },
+      {
+        "name": "nice-react-tooltip",
+        "type": "react-component",
+        "sourceAliasable": true
+      },
+      {
+        "name": "nice-react-field",
         "type": "react-component",
         "sourceAliasable": true
       }
