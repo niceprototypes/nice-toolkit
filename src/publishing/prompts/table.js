@@ -1,6 +1,7 @@
 const { info, cyan, gray, green, red, yellow } = require("../../shared/logger")
 const { recommendedLevel, requiresManualLevel } = require("./intent")
 const { derivedVersion } = require("./version")
+const { formatPlanTag } = require("../dependents")
 
 /**
  * Prints the candidate table with the current row highlighted. Called once
@@ -78,7 +79,7 @@ function renderTable(enriched, decisions, currentIdx) {
       // unresolved last-entry state immediately readable.
       const namePadded = candidate.name.padEnd(COL_NAME)
       const countPadded = String(count).padEnd(COL_ENTRIES)
-      info(red(`${isCurrent ? "▶ " : "  "}${namePadded} ${version} ${levelTag} ${countPadded} ${lastDate}`))
+      info(red(`${isCurrent ? "▶ " : "  "}${namePadded} ${version} ${levelTag} ${countPadded} ${lastDate}`) + formatPlanTag(candidate))
       continue
     }
 
@@ -93,7 +94,7 @@ function renderTable(enriched, decisions, currentIdx) {
     const countText = String(count).padEnd(COL_ENTRIES)
     const status = isAccepted ? green(countText) : gray(countText)
 
-    info(`${prefix}${name} ${version} ${levelTag} ${status} ${gray(lastDate)}`)
+    info(`${prefix}${name} ${version} ${levelTag} ${status} ${gray(lastDate)}${formatPlanTag(candidate)}`)
   }
 }
 

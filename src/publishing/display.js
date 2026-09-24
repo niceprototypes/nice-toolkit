@@ -25,6 +25,7 @@
 
 const { cyan, gray, green, yellow } = require("../shared/logger")
 const { getTierIndexMap } = require("../shared/registry")
+const { formatPlanTag } = require("./dependents")
 
 /**
  * Fallback tier for candidates whose name is not in the registry.
@@ -105,7 +106,7 @@ function groupCandidatesByTier(candidates) {
  *
  * Row layout:
  *
- *     {name}  {version}  {status}{dependent}
+ *     {name}  {version}  {status}{tag}
  *
  * Column rules:
  * - **name**: green when working tree is clean, yellow when dirty
@@ -114,8 +115,10 @@ function groupCandidatesByTier(candidates) {
  * - **status**: `"{n} uncommitted"` (yellow) when there are uncommitted
  *   files, `"committed"` (green) when the local version has moved past
  *   the published version, empty otherwise
- * - **dependent**: `" (dependent)"` (gray) when the candidate was pulled
- *   in by reverse-dependency resolution
+ * - **tag**: `formatPlanTag` — `" (FIRST publish)"` (yellow) for a
+ *   never-published package; `" (dependent)"` / `" (dependent, bump notes)"`
+ *   (gray) when the candidate was pulled in by reverse-dependency resolution
+ *   (candidates must be enriched with `.nice/bump.md` intent)
  *
  * @param {Candidate[]} candidates - Output of the publisher scan
  * @returns {void}
@@ -157,9 +160,7 @@ function displayCandidates(candidates) {
         statusCell = green("committed")
       }
 
-      const dependentTag = candidate.isDependent ? gray(" (dependent)") : ""
-
-      console.log(`  ${nameCell}  ${versionCell}  ${statusCell}${dependentTag}`)
+      console.log(`  ${nameCell}  ${versionCell}  ${statusCell}${formatPlanTag(candidate)}`)
     }
     console.log("")
   }

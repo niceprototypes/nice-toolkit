@@ -20,7 +20,7 @@ const { recommendedLevel } = require("./intent")
 async function promptEditLevel(c) {
   if (c.isNew) {
     const answer = (await promptKey(
-      `  ${cyan(c.name)} — new package, [y] accept / [n] skip: `,
+      `  ${cyan(c.name)} — ${yellow(`FIRST publish at ${c.localVersion}`)}, [y] accept / [n] skip: `,
       ["y", "Y", "n", "N"]
     )).trim().toLowerCase()
     if (answer === "n") return null

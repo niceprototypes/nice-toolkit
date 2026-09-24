@@ -19,7 +19,7 @@
  * @module publisher
  */
 
-const { log, info, cyan, green, gray } = require("../shared/logger")
+const { log, info, cyan, green } = require("../shared/logger")
 const { verifyNpmAuth } = require("./npm-auth")
 const { prompt } = require("./helpers")
 const { PUBLISH_TIERS, ALL_PACKAGES } = require("./constants")
@@ -28,6 +28,8 @@ const { resolveAffected, buildReverseDependencyMap } = require("./graph")
 const { scanPackages } = require("./scan")
 const { displayCandidates } = require("./display")
 const { promptVersionBumps } = require("./prompts")
+const { enrichWithIntent } = require("./prompts/intent")
+const { formatPlanTag } = require("./dependents")
 const { sortByPublishOrder } = require("./order")
 const { buildPackages } = require("./build")
 const { releasePackages } = require("./release")
@@ -54,15 +56,19 @@ async function publish({ packages: requestedPackages, doPublish = true, dryRun =
     return
   }
 
+  // Attach each candidate's .nice/bump.md intent once; the display tags and
+  // the dependent decision (walk vs auto-patch) both read it.
+  const enrichedCandidates = enrichWithIntent(candidates)
+
   // ── 2. Display candidates grouped by tier ─────────────────────────────────
   console.log("")
   log("Packages with changes:\n")
-  displayCandidates(candidates)
+  displayCandidates(enrichedCandidates)
   console.log("")
 
   // ── 3. Prompt for version bumps ───────────────────────────────────────────
-  const changedCandidates = candidates.filter(c => !c.isDependent)
-  const dependentCandidates = candidates.filter(c => c.isDependent)
+  const changedCandidates = enrichedCandidates.filter(c => !c.isDependent)
+  const dependentCandidates = enrichedCandidates.filter(c => c.isDependent)
 
   const toPublish = await promptVersionBumps(changedCandidates, dependentCandidates)
 
@@ -81,8 +87,7 @@ async function publish({ packages: requestedPackages, doPublish = true, dryRun =
   console.log("")
   log("Publish plan:\n")
   for (const p of toPublish) {
-    const tag = p.isDependent ? gray(" (dependent)") : ""
-    console.log(`  ${cyan(p.name)}  ${p.localVersion} → ${green(p.newVersion)}${tag}`)
+    console.log(`  ${cyan(p.name)}  ${p.localVersion} → ${green(p.newVersion)}${formatPlanTag(p)}`)
   }
   console.log("")
 

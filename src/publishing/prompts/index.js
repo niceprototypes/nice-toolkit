@@ -14,8 +14,10 @@
  *   [Esc] Cancel            Abort the publish
  *
  * Accepted rows show their count in green; the resolved next-version
- * appears in the Version column. Dependents (auto-patched) are never
- * part of this walk.
+ * appears in the Version column. Dependents join this walk when they have
+ * `.nice/bump.md` entries or have never been published (labelled FIRST
+ * publish, shipped at their local version); pure dependents are auto-patched
+ * outside it (see `../dependents.js`).
  *
  * **No-intent gate.** Existing packages that have changes but no entries
  * in `.nice/bump.md` cannot be auto-accepted. The whole row renders in
@@ -46,11 +48,12 @@
 
 const { info, warn } = require("../../shared/logger")
 const { promptKey } = require("../helpers")
-const { calcVersion } = require("../versioning")
-const { enrichWithIntent, recommendedLevel, requiresManualLevel } = require("./intent")
+const { recommendedLevel, requiresManualLevel } = require("./intent")
 const { derivedVersion } = require("./version")
 const { renderTable } = require("./table")
 const { promptEditLevel } = require("./edit-level")
+const { partitionCandidates, excludeBlockedByUnpublished } = require("../dependents")
+const { buildReverseDependencyMap } = require("../graph")
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Main
@@ -59,12 +62,14 @@ const { promptEditLevel } = require("./edit-level")
 /**
  * Walks the user through each changed candidate with a 5-option menu.
  *
- * @param {object[]} changedCandidates - Packages the user explicitly changed
- * @param {object[]} dependentCandidates - Packages added by graph resolution (auto-patched)
+ * @param {object[]} changedCandidates - Packages the user explicitly changed (enriched with intent)
+ * @param {object[]} dependentCandidates - Packages added by graph resolution (enriched with intent)
  * @returns {Promise<object[]|null>} Packages to publish with newVersion, or null if aborted
  */
 async function promptVersionBumps(changedCandidates, dependentCandidates) {
-  const enriched = enrichWithIntent(changedCandidates)
+  // The walk covers every changed package plus each dependent that has bump
+  // notes or has never been published; only pure dependents are auto-patched.
+  const { walk: enriched, autoPatch } = partitionCandidates(changedCandidates, dependentCandidates)
 
   // `decisions` is the source of truth for what each candidate will publish
   // at. Every candidate begins `pending` and transitions to `accepted`
@@ -207,15 +212,19 @@ async function promptVersionBumps(changedCandidates, dependentCandidates) {
     toPublish.push({ ...c, newVersion: derivedVersion(c, d.bumpType), bumpType: d.bumpType })
   }
 
-  // Dependents are auto-patched unconditionally — they never appear in the
-  // walk above. The assumption is that a dependent only needs republishing
-  // because one of its `file:` deps changed, and a patch bump is enough to
-  // signal "rebuild against the new dependency."
-  for (const c of dependentCandidates) {
-    toPublish.push({ ...c, newVersion: calcVersion(c.localVersion, "patch"), bumpType: "patch" })
+  // Pure dependents (published, no bump notes) are auto-patched: their only
+  // change is a rebuilt `file:` dependency, and a patch bump signals that.
+  toPublish.push(...autoPatch)
+
+  // A package cannot ship against a dependency that has never been published.
+  // Every never-published candidate the user skipped drops its dependents
+  // (transitively through other never-published packages) from this run.
+  const { kept, dropped } = excludeBlockedByUnpublished(toPublish, enriched, buildReverseDependencyMap())
+  for (const d of dropped) {
+    warn(`Excluding ${d.name}: it depends on ${d.blockedBy}, which has never been published and was skipped.`)
   }
 
-  return toPublish
+  return kept
 }
 
 module.exports = { promptVersionBumps }
