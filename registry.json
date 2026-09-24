@@ -168,6 +168,16 @@
         "name": "nice-storybook-navigation",
         "type": "plugin",
         "sourceAliasable": false
+      },
+      {
+        "name": "nice-react-select",
+        "type": "react-component",
+        "sourceAliasable": true
+      },
+      {
+        "name": "nice-react-calendar",
+        "type": "react-component",
+        "sourceAliasable": true
       }
     ]
   ]
