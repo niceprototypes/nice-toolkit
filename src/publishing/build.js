@@ -33,6 +33,9 @@ const { swapFileDepsToSemver } = require("./deps")
  */
 function buildPackages(toPublish, swappedDeps = new Map()) {
   const buildFailed = []
+  // Every package in this run → the version it will publish at, so in-run
+  // nice-* peer ranges are advertised at the new version, not the source range.
+  const runVersions = new Map(toPublish.map(p => [p.name, p.newVersion]))
 
   for (const p of toPublish) {
     const dir = pkgDir(p.name)
@@ -51,8 +54,8 @@ function buildPackages(toPublish, swappedDeps = new Map()) {
       continue
     }
 
-    // Swap file: deps to semver for npm publish
-    const originals = swapFileDepsToSemver(p.name)
+    // Swap file: deps to semver (and in-run peers to ^newVersion) for npm publish
+    const originals = swapFileDepsToSemver(p.name, runVersions)
     swappedDeps.set(p.name, originals)
   }
 

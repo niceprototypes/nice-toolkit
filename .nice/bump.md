@@ -3,3 +3,4 @@
 [2026-09-24 19:00] patch: Publish and build foundation (tier-0) packages first instead of last
 [2026-09-24 19:47] minor: Prompt for graph-resolved dependents that have bump notes or have never been published instead of auto-patching them, ship first publishes at their local version, and drop dependents of a skipped never-published package
 [2026-09-25 18:51] patch: Register nice-storybook-spinner in the Storybook addons tier
+[2026-09-25 19:08] minor: Rewrite nice-* peer ranges to the new versions of packages published in the same run, restore them afterwards, and count peerDependencies as dependency-graph edges

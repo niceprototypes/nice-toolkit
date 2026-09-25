@@ -14,11 +14,39 @@ const { ALL_PACKAGES } = require('./constants');
 const { pkgDir } = require('./helpers');
 
 /**
+ * Registered packages a parsed package.json depends on locally:
+ * - `dependencies` / `devDependencies` entries that are `file:` refs, and
+ * - `peerDependencies` entries naming a registered package (any range). A
+ *   nice-* dep declared as peer + `file:` devDependency is covered by the
+ *   devDependency; the peer edge also covers a peer declared without one.
+ *
+ * @param {object} pkg - Parsed package.json
+ * @param {string[]} allPackages - Registered package names
+ * @returns {Set<string>}
+ */
+function collectLocalDeps(pkg, allPackages) {
+  const deps = new Set();
+  const fileDeps = { ...pkg.dependencies, ...pkg.devDependencies };
+
+  for (const [depName, depVersion] of Object.entries(fileDeps)) {
+    if (typeof depVersion !== 'string' || !depVersion.startsWith('file:')) continue;
+    if (!allPackages.includes(depName)) continue;
+    deps.add(depName);
+  }
+
+  for (const depName of Object.keys(pkg.peerDependencies || {})) {
+    if (allPackages.includes(depName)) deps.add(depName);
+  }
+
+  return deps;
+}
+
+/**
  * Builds a reverse dependency map from all publishable packages.
  * Key = package name, Value = Set of packages that depend on it.
  *
- * Reads each package's package.json and checks dependencies + devDependencies
- * for file: references to other nice-* packages.
+ * Reads each package's package.json and collects its edges via
+ * collectLocalDeps (file: deps/devDeps + registered peerDependencies).
  *
  * @returns {Map<string, Set<string>>}
  */
@@ -35,12 +63,7 @@ function buildReverseDependencyMap() {
 
     try {
       const pkg = readJSON(path.join(dir, 'package.json'), { useCache: false });
-      const allDeps = { ...pkg.dependencies, ...pkg.devDependencies };
-
-      for (const [depName, depVersion] of Object.entries(allDeps)) {
-        if (typeof depVersion !== 'string' || !depVersion.startsWith('file:')) continue;
-        if (!ALL_PACKAGES.includes(depName)) continue;
-
+      for (const depName of collectLocalDeps(pkg, ALL_PACKAGES)) {
         if (!reverseMap.has(depName)) reverseMap.set(depName, new Set());
         reverseMap.get(depName).add(name);
       }
@@ -82,6 +105,7 @@ function resolveAffected(changedPackages) {
 }
 
 module.exports = {
+  collectLocalDeps,
   buildReverseDependencyMap,
   resolveAffected,
 };
