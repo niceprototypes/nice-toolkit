@@ -180,6 +180,11 @@
         "sourceAliasable": false
       },
       {
+        "name": "nice-storybook-spinner",
+        "type": "plugin",
+        "sourceAliasable": false
+      },
+      {
         "name": "nice-react-select",
         "type": "react-component",
         "sourceAliasable": true
