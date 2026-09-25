@@ -80,6 +80,11 @@
         "name": "nice-react-popover",
         "type": "react-component",
         "sourceAliasable": true
+      },
+      {
+        "name": "nice-react-list",
+        "type": "react-component",
+        "sourceAliasable": true
       }
     ],
     [
