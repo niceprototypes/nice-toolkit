@@ -34,6 +34,7 @@ const { sortByPublishOrder } = require("./order")
 const { buildPackages } = require("./build")
 const { releasePackages } = require("./release")
 const { restoreAllDeps, commitAndTag, printSummary } = require("./finalize")
+const { installRestoreGuard } = require("./restore-guard")
 
 /**
  * Runs the full publish workflow.
@@ -42,9 +43,10 @@ const { restoreAllDeps, commitAndTag, printSummary } = require("./finalize")
  * @param {string[]} [options.packages] - Packages with actual changes
  * @param {boolean} [options.doPublish=true] - Whether to publish to npm
  * @param {boolean} [options.dryRun=false] - Preview mode
+ * @param {number} [options.publishTimeoutMs] - Per-package npm publish timeout (default 120s)
  * @returns {Promise<void>}
  */
-async function publish({ packages: requestedPackages, doPublish = true, dryRun = false } = {}) {
+async function publish({ packages: requestedPackages, doPublish = true, dryRun = false, publishTimeoutMs } = {}) {
   // ── 1. Discover candidates ────────────────────────────────────────────────
   // Each package scans as its own task; the shared reporter checks it off
   // (✓ candidate / ⊘ unchanged) as `npm view` + git status resolve per package.
@@ -126,17 +128,11 @@ async function publish({ packages: requestedPackages, doPublish = true, dryRun =
     restoreAllDeps(swappedDeps)
   }
 
-  // Node does not run `finally` on SIGINT/SIGTERM (e.g. Ctrl-C at the OTP
-  // prompt), so restore explicitly on a signal too, then exit with the
-  // conventional 128+signal code. Handlers are removed in the finally.
-  const onSignal = (signal) => {
-    restoreOnce()
-    process.exit(signal === "SIGINT" ? 130 : 143)
-  }
-  const onSigint = () => onSignal("SIGINT")
-  const onSigterm = () => onSignal("SIGTERM")
-  process.on("SIGINT", onSigint)
-  process.on("SIGTERM", onSigterm)
+  // Node does not run `finally` on a signal or on process.exit() from another
+  // listener, so the guard also restores on SIGINT / SIGTERM / SIGHUP (terminal
+  // closed) and on process 'exit' (covers heart-spinner's own SIGINT exit).
+  // Removed in the finally.
+  const uninstallRestoreGuard = installRestoreGuard(restoreOnce)
 
   try {
     // ── 7. Build all packages (populates swappedDeps in place) ──────────────
@@ -154,7 +150,7 @@ async function publish({ packages: requestedPackages, doPublish = true, dryRun =
     // on login during scan/prompt/build (which don't need npm credentials).
     if (doPublish && !(await verifyNpmAuth())) return
 
-    const { published, failed } = await releasePackages(publishable, doPublish)
+    const { published, failed } = await releasePackages(publishable, doPublish, { timeoutMs: publishTimeoutMs })
     const allFailed = [...buildFailed, ...failed]
 
     // ── 9. Finalize — restore deps, commit, tag, push, summarize ───────────
@@ -168,8 +164,7 @@ async function publish({ packages: requestedPackages, doPublish = true, dryRun =
     // Safety net: restore on any early return, thrown error, or failure above.
     // No-op when the happy path already restored.
     restoreOnce()
-    process.removeListener("SIGINT", onSigint)
-    process.removeListener("SIGTERM", onSigterm)
+    uninstallRestoreGuard()
   }
 }
 

@@ -77,7 +77,16 @@ function runPublish(targets, options) {
   else if (options.changed || sel.empty) packages = undefined; // bare / --changed = changed set
   else packages = sel.roots;
 
-  publish({ packages, doPublish: !options.noNpm, dryRun: options.dryRun })
+  let publishTimeoutMs;
+  if (options.publishTimeout !== null && options.publishTimeout !== undefined) {
+    if (!Number.isFinite(options.publishTimeout) || options.publishTimeout <= 0) {
+      fail(`--publish-timeout takes a positive number of seconds. Try: ${cyan('nicely publish --publish-timeout 300')}`);
+      process.exit(1);
+    }
+    publishTimeoutMs = options.publishTimeout * 1000;
+  }
+
+  publish({ packages, doPublish: !options.noNpm, dryRun: options.dryRun, publishTimeoutMs })
     .then(() => process.exit(0))
     .catch((e) => { fail(e.message); process.exit(1); });
 }

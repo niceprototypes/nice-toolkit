@@ -7,7 +7,11 @@
  * failure is the captured error rendered beneath the failed (`✗`) line.
  *
  * Packages are already built and deps swapped — each publish only runs
- * `npm publish --ignore-scripts`.
+ * `npm publish --ignore-scripts`, spawned asynchronously (see npm-publish.js)
+ * so the spinner keeps animating and each publish is bounded by a per-package
+ * timeout (`--publish-timeout <s>`, default 120s). Any line npm prints that
+ * carries a URL (web-auth link) or reads like a prompt is shown immediately,
+ * above the spinner.
  *
  * OTP codes are primed once before the checklist and reused until npm rejects
  * one. A rejection re-prompts (pausing the spinner so the prompt owns the line)
@@ -17,24 +21,13 @@
  * @module publisher/release
  */
 
-const { info, log } = require("../shared/logger")
+const { info, log, yellow } = require("../shared/logger")
 const { runTasks, createReporter } = require("../shared/tasks")
-const { runShellCapture, pkgDir } = require("./helpers")
+const { pkgDir } = require("./helpers")
 const { createOtpManager, isOtpError } = require("./otp")
+const { runNpmPublish, DEFAULT_PUBLISH_TIMEOUT_S } = require("./npm-publish")
 
 const MAX_OTP_RETRIES = 3
-
-/**
- * Combine a failed execSync error's captured streams into one text blob. npm
- * writes its diagnostics to stderr; stdout is included as a fallback.
- *
- * @param {any} e - The error thrown by execSync
- * @returns {string}
- */
-function errorText(e) {
-  const captured = [e.stderr, e.stdout].filter(Boolean).map(String).join("").trim()
-  return captured || (e && e.message ? String(e.message) : String(e))
-}
 
 /**
  * A short one-line reason for the failed task line, drawn from npm's output —
@@ -59,11 +52,27 @@ function shortReason(text) {
  * @param {ReturnType<typeof createOtpManager>} otp - OTP manager
  * @param {import("../shared/tasks/reporter").Reporter} reporter - active reporter (for pause/resume)
  * @param {() => void} markHalted - called when OTP retries are exhausted
+ * @param {object} [opts]
+ * @param {number} [opts.timeoutMs] - per-attempt npm publish timeout
+ * @param {string} [opts.cwd] - package dir override (tests)
+ * @param {string} [opts.npmBin] - npm executable override (tests)
+ * @param {(text: string) => void} [opts.write] - sink for surfaced npm lines (default stdout)
  * @returns {Promise<import("../shared/tasks/status").Outcome>}
  */
-async function publishTask(pkg, otp, reporter, markHalted) {
-  const dir = pkgDir(pkg.name)
+async function publishTask(pkg, otp, reporter, markHalted, opts = {}) {
+  const dir = opts.cwd || pkgDir(pkg.name)
+  const timeoutMs = opts.timeoutMs || DEFAULT_PUBLISH_TIMEOUT_S * 1000
+  const write = opts.write || ((t) => process.stdout.write(t))
   let attempts = 0
+
+  // Surface an actionable npm line (auth URL / prompt) above the spinner:
+  // pause so the line is not overwritten by the next frame, print, resume.
+  const surface = (line) => {
+    reporter.pause()
+    const isUrl = /https?:\/\//.test(line)
+    write(`    ${yellow(isUrl ? `npm needs attention: ${line}` : `npm: ${line}`)}\n`)
+    reporter.resume()
+  }
 
   while (attempts <= MAX_OTP_RETRIES) {
     // attempts 0 reuses the primed code (no prompt). A retry re-prompts, first
@@ -80,31 +89,48 @@ async function publishTask(pkg, otp, reporter, markHalted) {
       }
     }
 
-    try {
-      // --ignore-scripts skips rebuild — packages are already built in the build
-      // phase. Output is captured (runShellCapture), so npm's notices stay hidden.
-      runShellCapture(`npm publish --otp=${code} --ignore-scripts --access public`, { cwd: dir })
-      return { kind: "done" }
-    } catch (e) {
-      const text = errorText(e)
+    // --ignore-scripts skips rebuild — packages are already built in the build
+    // phase. npm's `npm notice` output is captured and dropped on success.
+    const result = await runNpmPublish({
+      cwd: dir,
+      otp: code,
+      timeoutMs,
+      onActionable: surface,
+      npmBin: opts.npmBin,
+    })
+    if (result.ok) return { kind: "done" }
 
-      if (!isOtpError(text)) {
-        return { kind: "failed", detail: shortReason(text), output: text }
+    const text = result.text
+
+    if (result.timedOut) {
+      const secs = Math.round(timeoutMs / 1000)
+      const authHint = result.authUrl ? ` npm printed: ${result.authUrl}` : ""
+      return {
+        kind: "failed",
+        detail: `npm publish timed out after ${secs}s`,
+        output:
+          `npm publish timed out after ${secs}s — check the npm output above; ` +
+          `if npm asked for browser authentication, approve it or rerun.${authHint}` +
+          (text ? `\n${text}` : ""),
       }
-
-      attempts++
-      otp.invalidate()
-
-      if (attempts > MAX_OTP_RETRIES) {
-        markHalted()
-        return {
-          kind: "failed",
-          detail: `OTP rejected ${MAX_OTP_RETRIES}× — publish halted`,
-          output: text,
-        }
-      }
-      // else: loop and re-prompt for a fresh code
     }
+
+    if (!isOtpError(text)) {
+      return { kind: "failed", detail: shortReason(text || "publish failed"), output: text }
+    }
+
+    attempts++
+    otp.invalidate()
+
+    if (attempts > MAX_OTP_RETRIES) {
+      markHalted()
+      return {
+        kind: "failed",
+        detail: `OTP rejected ${MAX_OTP_RETRIES}× — publish halted`,
+        output: text,
+      }
+    }
+    // else: loop and re-prompt for a fresh code
   }
 
   // Unreachable — every path in the loop returns. Satisfies static analyzers.
@@ -117,9 +143,11 @@ async function publishTask(pkg, otp, reporter, markHalted) {
  *
  * @param {object[]} publishable - Built packages ready to publish
  * @param {boolean} doPublish - Whether to actually publish to npm
+ * @param {object} [opts]
+ * @param {number} [opts.timeoutMs] - per-package npm publish timeout
  * @returns {Promise<{ published: string[], failed: string[] }>}
  */
-async function releasePackages(publishable, doPublish) {
+async function releasePackages(publishable, doPublish, { timeoutMs } = {}) {
   const reporter = createReporter()
 
   // --no-npm: the bump/build/commit still happen upstream; render the queue as
@@ -152,7 +180,7 @@ async function releasePackages(publishable, doPublish) {
       if (halted) return { kind: "skipped", detail: "publish halted" }
       return publishTask(pkg, otp, reporter, () => {
         halted = true
-      })
+      }, { timeoutMs })
     },
   }))
 
@@ -171,4 +199,4 @@ async function releasePackages(publishable, doPublish) {
   return { published, failed }
 }
 
-module.exports = { releasePackages }
+module.exports = { releasePackages, publishTask, MAX_OTP_RETRIES }

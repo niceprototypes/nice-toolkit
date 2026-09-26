@@ -34,7 +34,7 @@ const LEGACY = {
 };
 
 /** Flags that consume the following token as their value (for positional split). */
-const FLAGS_WITH_VALUES = new Set(['--exclude', '--add-exclude', '--manager', '--dir', '--watch-dir']);
+const FLAGS_WITH_VALUES = new Set(['--exclude', '--add-exclude', '--manager', '--dir', '--watch-dir', '--publish-timeout']);
 
 /**
  * Flags that consume every token after them up to the next flag — a list value.
@@ -116,11 +116,17 @@ function parseModifiers(args, { conflictingPackages, pm: defaultPM }) {
   // (`--convert carat-top carat-bottom`). Bare `--convert` → [] → convert all.
   const convertTargets = getMultiArg(args, '--convert');
   const watchDir = getArg(args, '--dir') || getArg(args, '--watch-dir');
+  // `--publish-timeout <s>`: per-package npm publish timeout in seconds.
+  // null when absent; NaN when present but not a number (the publish handler
+  // rejects anything that is not a positive number).
+  const publishTimeoutRaw = getArg(args, '--publish-timeout');
+  const publishTimeout = hasFlag(args, '--publish-timeout') ? Number(publishTimeoutRaw) : null;
 
   return {
     dryRun: hasFlag(args, '--dry-run'),
     changed: hasFlag(args, '--changed'),
     noNpm: hasFlag(args, '--no-npm'),
+    publishTimeout,
     noKill: hasFlag(args, '--no-kill'),
     skipPeerCheck: hasFlag(args, '--skip-peer-check'),
     vite: hasFlag(args, '--vite'),

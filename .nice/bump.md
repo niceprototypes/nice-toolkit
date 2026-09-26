@@ -4,3 +4,4 @@
 [2026-09-24 19:47] minor: Prompt for graph-resolved dependents that have bump notes or have never been published instead of auto-patching them, ship first publishes at their local version, and drop dependents of a skipped never-published package
 [2026-09-25 18:51] patch: Register nice-storybook-spinner in the Storybook addons tier
 [2026-09-25 19:08] minor: Rewrite nice-* peer ranges to the new versions of packages published in the same run, restore them afterwards, and count peerDependencies as dependency-graph edges
+[2026-09-26 17:48] minor: Publish runs npm asynchronously with a per-package timeout (--publish-timeout <s>, default 120s), surfaces npm auth URLs/prompts live, and restores package.json swaps on SIGHUP/SIGINT/SIGTERM/exit (SIGINT restore was pre-empted by heart-spinner's exit)

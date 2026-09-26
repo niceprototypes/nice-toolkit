@@ -40,6 +40,7 @@ Flags:
   --dry-run                Preview without making changes (every mutating command)
   --changed                publish: restrict to the changed set
   --no-npm                 publish: bump/build/commit/push but skip npm publish
+  --publish-timeout <s>    publish: kill npm publish after <s> seconds per package (default 120)
   --vite                   clean: only Vite's optimized-deps cache (bounce servers)
   --no-kill                clean/build/reset: skip the dev-server port-kill
   --convert [names…]       build icons: regenerate .source .ai → svg first (space-separated icon names; omit = all)
