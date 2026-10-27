@@ -1,11 +1,12 @@
 /**
  * @fileoverview Path-level filesystem helpers — exists checks, directory
- * creation, recursive removal, single-file removal.
+ * creation, recursive removal, single-file removal, directory size.
  *
  * @module fs-utils/paths
  */
 
 const fs = require('fs');
+const path = require('path');
 
 /**
  * Checks if a path exists on the filesystem.
@@ -82,7 +83,33 @@ function removeEmptyDir(dirPath) {
   fs.rmdirSync(dirPath);
 }
 
+/**
+ * The total size of the files under a directory, recursively.
+ *
+ * @param {string} dirPath - Directory to measure
+ * @returns {number | null} Bytes, or null when the directory does not exist
+ */
+function directorySize(dirPath) {
+  let entries;
+  try {
+    entries = fs.readdirSync(dirPath, { withFileTypes: true });
+  } catch {
+    return null;
+  }
+  let bytes = 0;
+  for (const entry of entries) {
+    const full = path.join(dirPath, entry.name);
+    try {
+      bytes += entry.isDirectory() ? directorySize(full) ?? 0 : fs.statSync(full).size;
+    } catch {
+      /* removed while measuring (a prune or a rebuild) */
+    }
+  }
+  return bytes;
+}
+
 module.exports = {
+  directorySize,
   pathExists,
   removePath,
   removeFile,

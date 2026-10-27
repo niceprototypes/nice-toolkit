@@ -27,14 +27,21 @@ const NOISE = [
   /^rollup v\d/, //                   rollup banner
   /^CLI (Building|Using|tsup|Running|Target)/, // tsup banners
   /Watching for changes in /, //      tsup idle banner (cycle-end handled below)
+  /^CLI Ignoring changes in /, //     tsup watch banner
+  /^\s+at /, //                       JavaScript stack frames (kept in --raw)
 ];
 
 // A rebuild began.
 const BUILD_START = [
   /→ dist\//, //                      rollup: bundles src → dist…
   /\bBuild start\b/, //               tsup: CJS/ESM/DTS Build start
-  /Starting compilation/, //          tsc --watch
-  /File change detected/, //          tsc --watch
+];
+
+// A tsc --watch compile began. It runs until tsc's own idle line, whatever other watchers in
+// the same dev script (nice-styles' generators) finish meanwhile.
+const COMPILE_START = [
+  /Starting compilation/,
+  /File change detected/,
 ];
 
 // A discrete step finished OK.
@@ -43,6 +50,14 @@ const SETTLE = [
   /Build success in /, //             tsup
   /^✓ Generated /, //                 nice-icons generator
   /Found 0 errors/, //                tsc clean
+];
+
+// A build failed: the step's own error line (diagnostics follow as passthrough).
+const ERROR = [
+  /\bBuild failed\b/, //              tsup: "DTS Build failed"
+  /^\[!\]/, //                        rollup fatal error header
+  /\bRollupError\b/, //               rollup error class (tsup's DTS worker too)
+  /\berror TS\d+:/, //                tsc / tsup DTS diagnostic
 ];
 
 // Build cycle complete — the tool is idle again.
@@ -72,6 +87,7 @@ function looksLikePath(line) {
  * @property {string} text
  * @property {string} [detail]
  * @property {'active'|'done'} [state]
+ * @property {boolean} [compile] - build-start: a tsc compile, open until tsc's idle line
  */
 
 /**
@@ -125,6 +141,11 @@ function createParser(pkg) {
       return out;
     }
 
+    if (ERROR.some((re) => re.test(line))) {
+      out.push({ type: 'error', text: line });
+      return out;
+    }
+
     if (CYCLE_END.some((re) => re.test(line))) {
       flush(out);
       out.push({ type: 'cycle-end', text: line });
@@ -133,6 +154,11 @@ function createParser(pkg) {
 
     if (SETTLE.some((re) => re.test(line))) {
       out.push({ type: 'sub', text: line, state: 'done' });
+      return out;
+    }
+
+    if (COMPILE_START.some((re) => re.test(line))) {
+      out.push({ type: 'build-start', text: line, compile: true });
       return out;
     }
 

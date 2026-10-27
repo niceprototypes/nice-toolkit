@@ -20,6 +20,7 @@
  */
 
 const os = require('os');
+const path = require('path');
 const { DEFAULT_CONFLICTING_PACKAGES, PEER_ENFORCE } = require('./shared/config');
 const { info, success, fail, cyan, gray } = require('./shared/logger');
 const { showUsage } = require('./args');
@@ -33,7 +34,7 @@ const { removeConflictsInDir, dedupeLinkedPackages } = require('./linking/cleane
 const { cleanAllCaches } = require('./linking/cache-cleaner');
 const { buildAllPackages, buildAffected } = require('./linking/dist-builder');
 const { listIconNames } = require('./linking/icon-targets');
-const { terminateDevWatchers } = require('./linking/dev-watch-killer');
+const { stopDevelop } = require('./linking/dev-groups');
 const { readRegistry } = require('./shared/registry/read');
 const { getPackageNames } = require('./shared/registry/query');
 const { linkPackage, unlinkPackages } = require('./linking/linker');
@@ -53,6 +54,11 @@ const PM_VERBS = new Set(['link', 'unlink', 'dedupe', 'reset', 'develop']);
 /** The workspace base dir (`registry.basePath` with `~` expanded). */
 function baseDir() {
   return readRegistry().basePath.replace('~', os.homedir());
+}
+
+/** The record of the running `nicely develop` watcher groups (see linking/dev-groups). */
+function developPidFile() {
+  return path.join(baseDir(), '.nice', 'develop.pids');
 }
 
 // ── Per-verb runners ──────────────────────────────────────────────────────────
@@ -107,7 +113,7 @@ function runBuild(targets, options) {
   const pkg = expandTargets(sel.roots, getPackageNames());
   if (pkg.unmatched.length === 0) {
     // `build icons` / `build <names|glob>` → scoped, guarded build (stop dev, refresh Vite).
-    handleBuild(options, pkg.matched)
+    handleBuild({ ...options, pidFile: developPidFile() }, pkg.matched)
       .then((code) => process.exit(code))
       .catch((e) => { fail(e.message); process.exit(1); });
     return;
@@ -118,7 +124,7 @@ function runBuild(targets, options) {
     // Build the matched icons via nice-icons' `--convert`, then rebuild
     // dependents + refresh Vite like `build icons` does — scoped to those icons.
     info(`build icons: ${cyan(icons.matched.join(' '))}`);
-    handleBuild({ ...options, convert: true, convertTargets: icons.matched }, ['nice-icons'])
+    handleBuild({ ...options, convert: true, convertTargets: icons.matched, pidFile: developPidFile() }, ['nice-icons'])
       .then((code) => process.exit(code))
       .catch((e) => { fail(e.message); process.exit(1); });
     return;
@@ -168,10 +174,7 @@ async function runReset(projectDir, options) {
     // Stop any running `nicely develop` first — its rollup watchers write the same
     // dist files the rebuild does, and dedupe/clean mutate node_modules + caches
     // under it.
-    const stopped = terminateDevWatchers({ dryRun: options.dryRun });
-    if (stopped > 0) {
-      info(`Stopped ${stopped} running dev process${stopped === 1 ? '' : 'es'} before reset`);
-    }
+    stopDevelop(developPidFile(), { dryRun: options.dryRun });
     const buildResult = await buildAllPackages({ dryRun: options.dryRun, capture: options.log });
     await dedupeLinkedPackages(projectDir, options.packagesToRemove, {
       dryRun: options.dryRun,
@@ -194,11 +197,13 @@ async function runReset(projectDir, options) {
 function runDev(projectDir, options) {
   // One verb, full loop by default. `--no-reload` = rebuild only (old --dev);
   // `--reload-only` = trigger only, for external rebuilders (old --watch).
+  // `--stop` = stop the watchers recorded in the pid file.
   handleDevWatch(projectDir, {
     ...options,
     dev: !options.reloadOnly,
     watch: !options.noReload,
     watchDir: options.watchDir,
+    pidFile: developPidFile(),
   });
 }
 

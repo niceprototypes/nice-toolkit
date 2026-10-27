@@ -39,6 +39,8 @@ const { watchPackage } = require('./watch-package');
  * @property {string} [watchDir='dist'] - Subdirectory to watch in each package
  * @property {number} [debounce=300] - Debounce delay in milliseconds
  * @property {boolean} [verbose=false] - Log detailed change information
+ * @property {(pkgName: string, fileCount: number) => void} [onReload] - A view owns the output:
+ *   each reload is reported here instead of logged, and the roster lines are not printed
  */
 
 /**
@@ -54,7 +56,7 @@ const { watchPackage } = require('./watch-package');
  * controller.stop();
  */
 function startWatching(projectDir, options = {}) {
-  const { watchDir = 'dist', debounce = DEBOUNCE_DELAY, verbose = false } = options;
+  const { watchDir = 'dist', debounce = DEBOUNCE_DELAY, verbose = false, onReload } = options;
 
   // Find all linked packages
   const allLinkedPackages = findAllLinkedPackages(projectDir);
@@ -86,12 +88,14 @@ function startWatching(projectDir, options = {}) {
   }
 
   // Log what we're watching
-  log(`Watching ${cyan(linkedPackages.length)} linked packages:\n`);
-  for (const pkgPath of linkedPackages) {
-    const pkgName = getPackageName(pkgPath);
-    console.log(`  ${gray('•')} ${pkgName}`);
+  if (!onReload) {
+    log(`Watching ${cyan(linkedPackages.length)} linked packages:\n`);
+    for (const pkgPath of linkedPackages) {
+      const pkgName = getPackageName(pkgPath);
+      console.log(`  ${gray('•')} ${pkgName}`);
+    }
+    console.log('');
   }
-  console.log('');
 
   // Create debouncer
   const debouncer = createKeyedDebouncer(debounce);
@@ -109,7 +113,8 @@ function startWatching(projectDir, options = {}) {
         }
 
         touchTriggerFile(projectDir, pkgName);
-        success(`Triggered reload for ${cyan(pkgName)}`);
+        if (onReload) onReload(pkgName, fileCount);
+        else success(`Triggered reload for ${cyan(pkgName)}`);
       });
     });
 
@@ -123,7 +128,7 @@ function startWatching(projectDir, options = {}) {
     return { stop: () => {} };
   }
 
-  success(`Watching ${watchers.length} packages. Press Ctrl+C to stop.\n`);
+  if (!onReload) success(`Watching ${watchers.length} packages. Press Ctrl+C to stop.\n`);
 
   // Return controller
   return {

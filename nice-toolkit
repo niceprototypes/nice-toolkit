@@ -15,7 +15,7 @@ const { main } = require('./src/index');
 try {
   main();
 } catch (e) {
-  const { fail } = require('./src/logger');
+  const { fail } = require('./src/shared/logger');
   fail(e.message || String(e));
   process.exit(1);
 }

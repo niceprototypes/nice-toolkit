@@ -5,7 +5,7 @@
  * Concerns:
  * - cache.js   — in-memory package.json cache (clearCache)
  * - json.js    — readJSON / writeJSON
- * - paths.js   — pathExists, removePath, removeFile, ensureDir, readDir, removeEmptyDir
+ * - paths.js   — pathExists, removePath, removeFile, ensureDir, readDir, removeEmptyDir, directorySize
  * - package.js — getPackageName
  *
  * @module fs-utils
@@ -20,6 +20,7 @@ const {
   ensureDir,
   readDir,
   removeEmptyDir,
+  directorySize,
 } = require('./paths');
 const { getPackageName } = require('./package');
 
@@ -38,6 +39,7 @@ module.exports = {
   ensureDir,
   readDir,
   removeEmptyDir,
+  directorySize,
 
   // Package metadata
   getPackageName,

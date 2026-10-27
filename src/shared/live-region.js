@@ -27,6 +27,8 @@ const CLEAR_TO_END = '\x1b[0J'; // erase from cursor to end of screen
 /**
  * @typedef {object} LiveRegion
  * @property {(lines: string[]) => void} render - Repaint the block.
+ * @property {(lines: string[]) => void} printAbove - Write lines to the scrollback above the
+ *   block (they stay; the block is drawn again below them on the next render).
  * @property {(persist?: string[]) => void} done - Final paint + release the
  *   region (newline + show cursor) so later output appends below.
  * @property {boolean} isTTY
@@ -69,6 +71,15 @@ function createLiveRegion({ stream = process.stdout } = {}) {
   const restore = () => showCursor();
   process.once('exit', restore);
 
+  // The cursor rests at the end of the block's last row: back to column 0, then up to its first
+  // row (`prevCount - 1` rows above), so a repaint starts exactly where the block did
+  function home() {
+    let out = '';
+    if (prevCount > 0) out += '\r';
+    if (prevCount > 1) out += CURSOR_UP(prevCount - 1);
+    return out;
+  }
+
   function renderTTY(lines) {
     const cols = stream.columns || 80;
     const block = lines.map((l) => truncateToWidth(l, cols - 1)).join('\n');
@@ -79,10 +90,8 @@ function createLiveRegion({ stream = process.stdout } = {}) {
       hidden = true;
     }
 
-    let out = '';
-    if (prevCount > 0) out += CURSOR_UP(prevCount);
-    out += CLEAR_TO_END + block; // no trailing newline: cursor rests on the last row
-    stream.write(out);
+    // no trailing newline: the cursor rests on the last row
+    stream.write(home() + CLEAR_TO_END + block);
 
     prevCount = lines.length;
     lastBlock = block;
@@ -104,6 +113,18 @@ function createLiveRegion({ stream = process.stdout } = {}) {
       if (released) return;
       if (isTTY) renderTTY(lines);
       else renderNonTTY(lines);
+    },
+
+    printAbove(lines) {
+      if (released || lines.length === 0) return;
+      if (!isTTY) {
+        for (const line of lines) stream.write(`${line}\n`);
+        return;
+      }
+      // Scrollback lines are never repainted, so they may wrap
+      stream.write(`${home()}${CLEAR_TO_END}${lines.join('\n')}\n`);
+      prevCount = 0;
+      lastBlock = null;
     },
 
     done(persist) {

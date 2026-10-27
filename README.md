@@ -199,6 +199,72 @@ NODE_OPTIONS=--preserve-symlinks npm start
 # Now changes in nice-react-button will auto-rebuild and appear in your app!
 ```
 
+### `nicely develop` startup order
+
+`nicely develop` runs every linked package's `dev` watcher, dependencies first: a watcher starts
+only after the nice-* packages it depends on (its package.json `dependencies`,
+`devDependencies` and `peerDependencies`, among the packages being run) have finished their
+first build, so it never reads their types while they are being written (e.g.
+storybook-navigation's tsup DTS step failing with TS2307). nice-config-rollup no longer empties
+`dist/` on start; tsup's `clean` still does, so the order stays as the safeguard.
+
+- Packages whose dependencies are done start together.
+- First build done: rollup's "waiting for changes", tsc's "Watching for file changes", or, for
+  tsup and the icons generator, every started build finished and 1.5s of quiet.
+- A dependency whose first build fails, exits or takes over 3 minutes still releases its
+  dependents, with a warning. A dependency cycle starts its members together.
+
+### `nicely develop` output
+
+In a terminal, `nicely develop` draws a live tree, redrawn in place:
+
+- A header: the package count, how many are building, start progress (then "all built once
+  in Xs"), the reload count and the last reload.
+- One row per package: ♥ building, with the time since its build started (the same start as
+  the ✓ row's duration) and its newest step summarized
+  (`♥ storybook-navigation  1.2s · ⠦ Building type declarations`, the time white while it
+  counts, then yellow over 8s and red over 20s; `--raw` shows the tools' own
+  lines), ✓ ready (the last build's
+  duration and the package's `dist/` size, every file in it: `✓ react-button  1.2s · 185.0 KB`;
+  each turns yellow over 8s / 512 KB and red over 20s / 2 MB),
+  ⚠ warning count, ✗ failed (its first error) or exited (its exit code),
+  · queued (`Waiting for react-styles, and 2 others`: the first dependency it waits for and
+  how many more; `Queued` once none are left).
+- A failed package's diagnostics (every line from its first error on, stack frames aside), pinned under the
+  tree until its next successful build. On a short terminal, ready rows collapse to one
+  line and long diagnostics are cut.
+
+Errors are rollup's `[!]` / `RollupError`, tsup's `Build failed`, `error TS…` lines, tsc's
+`Found N errors`, and a watcher process that exits. Outside a terminal (CI, a pipe), it prints
+one line per change instead: a batch starting, a build finished (✓/⚠/✗, failures with their
+diagnostics in full), a reload.
+
+`nicely develop --verbose` lists each building package's steps under its row
+(`♥ storybook-navigation  1.2s · Building`). When a package
+finishes, its row and every step of the build are printed once above the tree, where they stay
+in the scrollback; the tree keeps what is still building or failed.
+
+`nicely develop --raw` prints every watcher line instead, prefixed with its package name, plus
+the watcher's "changed" and "Triggered reload" lines for each reload.
+
+### Stopping `nicely develop`
+
+Each watcher runs in its own process group, so none of them outlives `nicely develop`:
+
+- Ctrl+C, SIGTERM, a closed terminal (SIGHUP), a crash, or any other exit stops every watcher.
+- Each group is led by a small wrapper that stops the group when its pipe to `nicely develop`
+  closes, which also covers a `kill -9` of `nicely develop`.
+- Every group is recorded in `{workspace}/.nice/develop.pids`. The next `nicely develop` stops
+  any group left running by one that is gone, and warns when another `nicely develop` is still
+  running. A recorded pid is only signaled while its start time and command still match.
+- `nicely develop --stop` stops every recorded watcher and the `nicely develop` that owns it.
+- Stopping warns when a package has no build output yet (its package.json `main` is missing:
+  stopped before its first build finished), with the packages to rebuild. The next
+  `nicely develop` warns about them too and rebuilds them.
+- A scoped build (`nicely build icons`, `nicely build <names>`) and `nicely reset` stop a running
+  `nicely develop` the same way before building, since both write the same `dist/` (the scoped
+  build skips this with `--no-kill`).
+
 ### Testing Multiple Linked Packages
 
 ```bash

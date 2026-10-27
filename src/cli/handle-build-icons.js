@@ -2,12 +2,12 @@
  * @fileoverview Preflight + execution for `nicely --build-icons`.
  *
  * `--build-icons` rebuilds nice-icons + its dependents' dist via one-shot
- * `npm run build`. A concurrently-running `nicely --dev --watch` runs `rollup -c -w`
- * over those SAME packages into the SAME dist, and every rollup build wipes
- * dist/ first (`clean: true`), so the two race — transient
+ * `npm run build`. A concurrently-running `nicely develop` runs `rollup -c -w`
+ * over those SAME packages into the SAME dist, and both rewrite it file by file
+ * (and prune what they did not write), so the two race — transient
  * `Could not resolve entry module "dist/types/index.d.ts"` errors and consumer
  * reloads against half-written dist. So this handler just stops any running
- * dev/watch first — the same reflex as the `--vite`/refreshVite step killing
+ * `nicely develop` first (the watchers it recorded in its pid file) — the same reflex as the `--vite`/refreshVite step killing
  * dev-server ports — rather than prompting. Pass `--no-kill` to opt out.
  *
  * @module cli/handle-build-icons
@@ -18,7 +18,7 @@ const { warn, success } = require('../shared/logger');
 const { readRegistry } = require('../shared/registry/read');
 const { buildAffected } = require('../linking/dist-builder');
 const { refreshVite } = require('../linking/cache-cleaner');
-const { findDevWatchProcesses, terminateDevWatchers } = require('../linking/dev-watch-killer');
+const { findRecordedGroups, stopDevelop } = require('../linking/dev-groups');
 
 /**
  * Run a scoped build (roots + their dependents, tier order), then refresh Vite
@@ -49,27 +49,27 @@ async function runScopedBuild(options, roots) {
  * would race) — unless `--no-kill` — then builds the roots + dependents and
  * refreshes Vite.
  *
- * @param {object} options - Parsed modifier options
+ * @param {object} options - Parsed modifier options, plus `pidFile` (the develop record)
  * @param {string[]} roots - Root package names (default: the icons group)
  * @returns {Promise<number>} Exit code
  */
 async function handleBuild(options, roots = ['nice-icons']) {
-  const running = findDevWatchProcesses();
+  const running = findRecordedGroups(options.pidFile).groups.length;
 
-  if (running.length > 0) {
+  if (running > 0) {
     if (options.noKill) {
       // Explicit opt-out — build anyway and let the caller own the race.
-      warn(`${running.length} nicely develop running and --no-kill set — building anyway; expect a dist race.`);
+      warn(`nicely develop running (${running} watchers) and --no-kill set — building anyway; expect a dist race.`);
     } else {
-      // Auto-stop the dev watcher(s). terminateDevWatchers logs each process it
-      // signals and no-ops (reports only) under dryRun.
-      terminateDevWatchers({ dryRun: options.dryRun });
+      // Auto-stop the dev watchers. stopDevelop logs what it stops and only
+      // reports under dryRun.
+      stopDevelop(options.pidFile, { dryRun: options.dryRun });
     }
   }
 
   const code = await runScopedBuild(options, roots);
   // Remind the user to restart the watcher we stopped, once the build is clean.
-  if (code === 0 && running.length > 0 && !options.noKill && !options.dryRun) {
+  if (code === 0 && running > 0 && !options.noKill && !options.dryRun) {
     success('Built. Restart `nicely develop` to resume hot-reloading.');
   }
   return code;

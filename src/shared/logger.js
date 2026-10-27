@@ -50,6 +50,13 @@ const red = (s) => `\x1b[31m${s}\x1b[0m`;
  */
 const yellow = (s) => `\x1b[33m${s}\x1b[0m`;
 
+/**
+ * Wraps text in ANSI escape codes for bright white color
+ * @param {string} s - Text to colorize
+ * @returns {string} Bright-white text
+ */
+const white = (s) => `\x1b[97m${s}\x1b[0m`;
+
 // ──────────────────────────────────────────────────────────────────────────────
 // Logging Functions
 // ──────────────────────────────────────────────────────────────────────────────
@@ -130,6 +137,7 @@ module.exports = {
   gray,
   green,
   red,
+  white,
   yellow,
 
   // Loggers

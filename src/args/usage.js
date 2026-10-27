@@ -47,6 +47,9 @@ Flags:
   --log                    reset: write a timestamped build report to {workspace}/.nice/
   --no-reload              dev: rebuild only (no reload trigger)
   --reload-only            dev: reload trigger only (for an external rebuilder)
+  --stop                   dev: stop every running nicely develop and its watchers
+  --verbose                dev: list each package's build steps, kept in the scrollback when it finishes
+  --raw                    dev: print every watcher line, prefixed, instead of the live tree
   --dir <dir>              dev: directory watched in each package (default: dist)
   --exclude <a,b,c>        link/dedupe: singleton-removal list (overrides defaults)
   --add-exclude <a,b,c>    link/dedupe: extend the removal list
@@ -68,6 +71,7 @@ Examples:
   nicely clean --vite                           Bounce only Vite's optimized-deps cache
   nicely reset --dry-run                        Preview build → dedupe → clean
   nicely develop                                Rebuild + reload loop (the common setup)
+  nicely develop --stop                         Stop nicely develop and every watcher it started
   nicely bump minor "Add spacing prop"          Record a bump intent
 
 Notes:

@@ -1,150 +1,188 @@
 /**
  * @fileoverview The develop tree state — a pure, event-fed model.
  *
- * One entry per linked package, each cycling
- * `idle → reloading → settling → settled → reloading …` forever. The model holds
- * no timers and writes nothing; the orchestrator drives it with events and the
- * view derives lines from it. Keeping it side-effect-free makes the demo
- * harness (fixture replay) and the live run share the exact same state code.
+ * One entry per linked package: `queued → building → settled → building …`, or `exited`
+ * when its watcher process ends. The model holds no timers and writes nothing; dev-runner's
+ * events drive it (through `lifecycle`) and `tree-view` derives lines from it.
+ *
+ * A failed cycle's diagnostics (every raw line from its first error on) stay pinned until the
+ * package's next successful cycle.
  *
  * @module cli/develop/tree-model
  */
 
-// A chatty tool (rollup + dts + tsc all logging) can emit many lines per cycle;
-// cap what we retain so the active package's block can't outgrow the viewport.
-// The count still surfaces in the settled summary.
+// The live tree shows a building package's last MAX_SUBITEMS steps; the model keeps the cycle's
+// steps up to MAX_STEPS (--verbose prints them all when the package finishes).
 const MAX_SUBITEMS = 6;
+const MAX_STEPS = 200;
+// Raw lines kept per package: the diagnostics of a failed cycle, and the last lines before an exit
+const MAX_DIAGNOSTICS = 200;
+const MAX_RECENT = 20;
 
 /**
- * @typedef {'idle'|'reloading'|'settling'|'settled'} PkgState
+ * @typedef {'queued'|'building'|'settled'|'exited'} PkgState
  *
  * @typedef {object} SubItem
- * @property {string} id
  * @property {string} text
  * @property {'active'|'done'|'warning'|'failed'} state
  * @property {string} [detail] - Secondary line (e.g. a warning's file path).
  *
  * @typedef {object} PkgEntry
  * @property {string} name
+ * @property {Set<string>} deps - Dependencies among the running packages
  * @property {PkgState} state
- * @property {import('../../shared/tasks/status').Outcome | null} outcome
+ * @property {import('../../shared/tasks/status').Outcome | null} outcome - The last settled cycle's
  * @property {number} warnings
- * @property {boolean} failed
- * @property {SubItem[]} subItems
- * @property {string[]} rawOnFail - Captured raw lines, dumped only if the cycle fails.
- * @property {number} startedAt - ms timestamp the current reload began.
- * @property {number} cycle - Monotonic id; drops late pings from a closed cycle.
- * @property {number} order - Stable display order (registration order).
+ * @property {string | null} firstError - The current cycle's first error line
+ * @property {SubItem[]} subItems - The current cycle's steps
+ * @property {string[] | null} diagnostics - Raw lines from the current cycle's first error on, stack frames aside
+ * @property {string[]} recent - The last raw lines, for an unexpected exit
+ * @property {string[] | null} pinned - The diagnostics of the last failed cycle, until one succeeds
+ * @property {boolean} builtOnce
+ * @property {number} startedAt - When the current cycle began
+ * @property {number} duration - The last settled cycle's duration, ms
+ * @property {number} settledAt
+ * @property {number | null} outputBytes - dist/ total when the last cycle settled (null without one)
+ * @property {number} outputAt - When the package last printed
+ * @property {number} order - Display order (registration order)
  */
 
 /**
  * Creates an empty tree model.
- * @param {() => number} now - Injected clock (Date.now in prod; fixture-driven in the demo).
- * @returns {object}
+ * @param {() => number} now - Injected clock
  */
 function createTreeModel(now = Date.now) {
   /** @type {Map<string, PkgEntry>} */
   const pkgs = new Map();
-  let order = 0;
+  const reloads = { count: 0, at: 0, pkg: null };
+  let allBuiltIn = null;
 
-  /** Registers a package (idempotent), so it appears in the roster from the start. */
-  function ensure(name) {
-    let e = pkgs.get(name);
-    if (!e) {
-      e = {
-        name,
-        state: 'idle',
-        outcome: null,
-        warnings: 0,
-        failed: false,
-        subItems: [],
-        rawOnFail: [],
-        startedAt: 0,
-        cycle: 0,
-        order: order++,
-      };
-      pkgs.set(name, e);
-    }
-    return e;
+  /** Registers a package as queued (idempotent), so it appears in the roster from the start. */
+  function register(name, deps = new Set()) {
+    if (pkgs.has(name)) return pkgs.get(name);
+    const entry = {
+      name,
+      deps,
+      state: 'queued',
+      outcome: null,
+      warnings: 0,
+      firstError: null,
+      subItems: [],
+      diagnostics: null,
+      recent: [],
+      pinned: null,
+      builtOnce: false,
+      startedAt: 0,
+      duration: 0,
+      settledAt: 0,
+      outputBytes: null,
+      outputAt: 0,
+      order: pkgs.size,
+    };
+    pkgs.set(name, entry);
+    return entry;
   }
 
-  /** Begins a fresh reload cycle for `name`, clearing the previous cycle's items. */
-  function reloadStart(name) {
-    const e = ensure(name);
-    e.state = 'reloading';
-    e.outcome = null;
-    e.warnings = 0;
-    e.failed = false;
-    e.subItems = [];
-    e.rawOnFail = [];
-    e.startedAt = now();
-    e.cycle += 1;
-    return e.cycle;
+  /** Begins a build cycle: the watcher's start, or a rebuild after a settled cycle. */
+  function cycleStart(name) {
+    const entry = register(name);
+    entry.state = 'building';
+    entry.warnings = 0;
+    entry.firstError = null;
+    entry.subItems = [];
+    entry.diagnostics = null;
+    entry.startedAt = now();
   }
 
-  /**
-   * Flips any still-spinning (`active`) sub-item to `done`. Called before adding
-   * a new sub-item so only the newest one braille-spins and everything above it
-   * reads as `✓` — the streaming effect from the mockup.
-   */
+  /** Flips the spinning sub-item to done, so only the newest one spins. */
   function markActiveDone(name) {
-    const e = ensure(name);
-    for (const s of e.subItems) if (s.state === 'active') s.state = 'done';
+    for (const item of register(name).subItems) if (item.state === 'active') item.state = 'done';
   }
 
-  /** Appends a sub-item under the active package. */
+  /** Appends a step under a building package. */
   function sub(name, { text, state = 'active', detail }) {
-    const e = ensure(name);
-    if (e.state !== 'reloading') return;
-    e.subItems.push({ id: `s${e.subItems.length}`, text, state, detail });
-    if (e.subItems.length > MAX_SUBITEMS) e.subItems.shift();
-    if (state === 'warning') e.warnings += 1;
-    if (state === 'failed') e.failed = true;
-  }
-
-  /** Records a raw line for potential failure dump. */
-  function raw(name, line) {
-    const e = ensure(name);
-    if (e.rawOnFail.length < 200) e.rawOnFail.push(line);
+    const entry = register(name);
+    if (entry.state !== 'building') return;
+    if (entry.subItems.length < MAX_STEPS) entry.subItems.push({ text, state, detail });
+    if (state === 'warning') entry.warnings += 1;
+    if (state === 'failed') {
+      entry.firstError ??= text;
+      entry.diagnostics ??= [];
+    }
   }
 
   /**
-   * Settles the current cycle. Ignored if `cycle` is stale (a late ping from an
-   * already-closed cycle). Returns the settled entry, or null if dropped.
+   * Records a raw output line: kept as a diagnostic once the cycle has failed (JavaScript stack
+   * frames aside: `--raw` shows those), and as recent output.
    */
-  function settle(name, cycle) {
-    const e = pkgs.get(name);
-    if (!e || e.state !== 'reloading' || (cycle != null && cycle !== e.cycle)) return null;
-    e.state = 'settled';
-    if (e.failed) {
-      e.outcome = { kind: 'failed', detail: 'build failed' };
-    } else if (e.warnings > 0) {
-      e.outcome = { kind: 'warned', count: e.warnings };
-    } else {
-      e.outcome = { kind: 'done' };
-    }
-    return e;
+  function raw(name, line) {
+    const entry = register(name);
+    entry.outputAt = now();
+    const isStackFrame = /^\s+at /.test(line);
+    if (entry.diagnostics && !isStackFrame && entry.diagnostics.length < MAX_DIAGNOSTICS) entry.diagnostics.push(line);
+    entry.recent.push(line);
+    if (entry.recent.length > MAX_RECENT) entry.recent.shift();
   }
+
+  /**
+   * Ends the current cycle with the watcher's outcome (cycle-tracker).
+   *
+   * @param {string} name
+   * @param {import('./cycle-tracker').CycleOutcome} outcome
+   * @param {{ exitCode?: number | null, outputBytes?: number | null }} [info]
+   */
+  function settle(name, outcome, { exitCode = null, outputBytes = null } = {}) {
+    const entry = pkgs.get(name);
+    if (!entry || entry.state === 'exited') return;
+    markActiveDone(name);
+    entry.settledAt = now();
+    entry.duration = entry.settledAt - entry.startedAt;
+    entry.outputBytes = outputBytes;
+    if (outcome === 'exited') {
+      entry.state = 'exited';
+      entry.outcome = { kind: 'failed', detail: `Exited${exitCode === null ? '' : ` with code ${exitCode}`}` };
+      entry.pinned = entry.diagnostics ?? [...entry.recent];
+      return;
+    }
+    entry.state = 'settled';
+    entry.builtOnce = true;
+    if (outcome === 'failed') {
+      entry.outcome = { kind: 'failed', detail: entry.firstError ?? 'build failed' };
+      entry.pinned = entry.diagnostics ?? [...entry.recent];
+    } else {
+      entry.outcome = entry.warnings > 0 ? { kind: 'warned', count: entry.warnings } : { kind: 'done' };
+      entry.pinned = null;
+    }
+  }
+
+  /** Counts a consumer reload (the watcher touched the trigger file for `name`). */
+  function reloadPing(name) {
+    reloads.count += 1;
+    reloads.at = now();
+    reloads.pkg = name;
+  }
+
+  /** Records that every package finished its first build, `ms` after the start. */
+  function allBuilt(ms) {
+    allBuiltIn = ms;
+  }
+
+  const all = () => Array.from(pkgs.values()).sort((a, b) => a.order - b.order);
 
   return {
-    ensure,
-    reloadStart,
+    register,
+    cycleStart,
     markActiveDone,
     sub,
     raw,
     settle,
-    get(name) {
-      return pkgs.get(name);
-    },
-    all() {
-      return Array.from(pkgs.values()).sort((a, b) => a.order - b.order);
-    },
-    active() {
-      return this.all().filter((e) => e.state === 'reloading' || e.state === 'settling');
-    },
-    anyActive() {
-      return this.all().some((e) => e.state === 'reloading' || e.state === 'settling');
-    },
+    reloadPing,
+    allBuilt,
+    get: (name) => pkgs.get(name),
+    all,
+    reloads: () => ({ ...reloads }),
+    allBuiltIn: () => allBuiltIn,
+    anyBuilding: () => all().some((entry) => entry.state === 'building'),
   };
 }
 

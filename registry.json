@@ -63,6 +63,11 @@
         "name": "nice-react-styles",
         "type": "react-component",
         "sourceAliasable": true
+      },
+      {
+        "name": "nice-config-vite",
+        "type": "foundation",
+        "sourceAliasable": false
       }
     ],
     [
@@ -83,6 +88,31 @@
       },
       {
         "name": "nice-react-list",
+        "type": "react-component",
+        "sourceAliasable": true
+      },
+      {
+        "name": "nice-config-crxjs",
+        "type": "foundation",
+        "sourceAliasable": false
+      },
+      {
+        "name": "nice-react-line",
+        "type": "react-component",
+        "sourceAliasable": true
+      },
+      {
+        "name": "nice-react-toggle",
+        "type": "react-component",
+        "sourceAliasable": true
+      },
+      {
+        "name": "nice-react-tabs",
+        "type": "react-component",
+        "sourceAliasable": true
+      },
+      {
+        "name": "nice-react-dialog",
         "type": "react-component",
         "sourceAliasable": true
       }
@@ -122,6 +152,16 @@
     [
       {
         "name": "nice-react-button",
+        "type": "react-component",
+        "sourceAliasable": true
+      },
+      {
+        "name": "nice-react-checkbox",
+        "type": "react-component",
+        "sourceAliasable": true
+      },
+      {
+        "name": "nice-react-logo",
         "type": "react-component",
         "sourceAliasable": true
       }

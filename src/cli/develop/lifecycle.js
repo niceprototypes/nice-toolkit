@@ -1,85 +1,41 @@
 /**
  * @fileoverview The reload lifecycle reducer — parser events → model mutations.
  *
- * Timer-free on purpose: the demo harness (synchronous fixture replay) and the
- * live orchestrator (real timers) share this exact reducer, and each owns its
- * own settle timing. A package flips `idle/settled → reloading` on its first
- * build signal, streams sub-items (newest spins, prior settle to ✓), and reports
- * `cycleEnded` when the tool goes idle — the caller decides when to actually
- * settle (immediately in the demo, debounced in the live run, to coalesce a
- * tool's multi-phase "waiting…" burst into one settle).
+ * dev-runner parses each watcher line once (`dev-output-parser`); the same events drive the
+ * cycle tracker (which ends cycles) and, here, the steps of the tree model. A settled package
+ * starts a new cycle on its next output.
  *
  * @module cli/develop/lifecycle
  */
 
 /**
- * Applies one raw output line for `pkg` to the model.
+ * Applies one watcher output line, already parsed, to the model.
  *
  * @param {ReturnType<import('./tree-model').createTreeModel>} model
- * @param {{ feed: (raw: string) => import('./dev-output-parser').ParseEvent[] }} parser
  * @param {string} pkg
- * @param {string} rawLine
- * @returns {{ cycleEnded: boolean, cycle: number }}
+ * @param {string} line - The raw line
+ * @param {import('./dev-output-parser').ParseEvent[]} events - `line`'s parser events
  */
-function feedLine(model, parser, pkg, rawLine) {
-  const events = parser.feed(rawLine);
-  let cycleEnded = false;
-
-  for (const ev of events) {
+function feedEvents(model, pkg, line, events) {
+  for (const event of events) {
     const entry = model.get(pkg);
-    const idle = !entry || entry.state === 'idle' || entry.state === 'settled';
-
-    switch (ev.type) {
-      case 'build-start':
-      case 'sub':
-      case 'passthrough':
-        if (idle) model.reloadStart(pkg);
-        model.markActiveDone(pkg);
-        model.sub(pkg, { text: ev.text, state: 'active' });
-        break;
-
+    if (!entry || entry.state === 'exited') return;
+    if (event.type === 'cycle-end') continue;
+    if (entry.state !== 'building') model.cycleStart(pkg);
+    model.markActiveDone(pkg);
+    switch (event.type) {
       case 'warning':
-        if (idle) model.reloadStart(pkg);
-        model.markActiveDone(pkg);
-        model.sub(pkg, { text: ev.text, state: 'warning', detail: ev.detail });
+        model.sub(pkg, { text: event.text, state: 'warning', detail: event.detail });
         break;
-
       case 'error':
-        if (idle) model.reloadStart(pkg);
-        model.markActiveDone(pkg);
-        model.sub(pkg, { text: ev.text, state: 'failed', detail: ev.detail });
+        model.sub(pkg, { text: event.text, state: 'failed' });
         break;
-
-      case 'cycle-end':
-        // Only meaningful if the package is mid-reload; a stray "waiting…" from
-        // an already-idle tool is ignored.
-        if (entry && entry.state === 'reloading') {
-          model.markActiveDone(pkg);
-          cycleEnded = true;
-        }
-        break;
+      default:
+        // build-start, a finished step, or unrecognized output: the newest step
+        model.sub(pkg, { text: event.text, state: 'active' });
     }
   }
-
-  const entry = model.get(pkg);
-  return { cycleEnded, cycle: entry ? entry.cycle : 0 };
+  model.raw(pkg, line);
 }
 
-/**
- * Records the watcher's post-build reload ping as the confirming sub-item. This
- * lags the build (300ms dist debouncer), so it is a "reloaded" confirmation, not
- * a trigger — it only appends to an in-flight package, never starts one.
- *
- * @param {ReturnType<import('./tree-model').createTreeModel>} model
- * @param {string} pkg
- * @param {number} count - Changed file count.
- */
-function feedReloadPing(model, pkg, count) {
-  const entry = model.get(pkg);
-  if (!entry || entry.state !== 'reloading') return;
-  model.markActiveDone(pkg);
-  const files = count === 1 ? 'file' : 'files';
-  model.sub(pkg, { text: `${pkg} reloaded (${count} ${files})`, state: 'active' });
-}
-
-module.exports = { feedLine, feedReloadPing };
+module.exports = { feedEvents };
